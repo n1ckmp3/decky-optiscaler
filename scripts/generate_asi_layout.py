@@ -41,6 +41,7 @@ ENUM_UNDERLYING = {
     "Upscaler": "int32_t",
     "SharpenShader": "int32_t",
     "FSR4Support": "uint8_t",
+    "FSR4Model": "uint8_t",
     "Scaler": "uint32_t",
     "ForceReflex": "uint32_t",
     "LFXMode": "uint32_t",
@@ -52,6 +53,7 @@ ENUM_UNDERLYING = {
     "FGNvngxReplacement": "uint32_t",
     "FpsOverlay": "uint32_t",
     "FpsOverlayPos": "uint32_t",
+    "ReprojectionFill": "uint32_t",
 }
 
 # Non-CustomOptional members that still take up space in the object.
@@ -175,41 +177,62 @@ READ_RE = re.compile(
     re.S,
 )
 
-
-# Some options are read into a local first so the value can be clamped or
-# converted before being stored, e.g.
-#   if (auto setting = readFloat("Sharpness", "Sharpness"); setting.has_value())
-#       Sharpness.set_from_config(std::clamp(setting.value(), 0.0f, 1.3f));
-DEFERRED_RE = re.compile(
+# Every read in Reload(), whatever shape the surrounding statement has. Used to
+# learn which (section, key) pairs exist and how each is parsed; the member it
+# names is *not* read from here, because in the if/else and clamp forms the
+# member sits on a different statement than the read.
+READ_ANY_RE = re.compile(
     r"read(?P<how>Bool|Int|Float|UInt|String|WString|Enum\s*<[^>]*>)\s*\(\s*"
-    # The tail is a lookahead so overlapping reads (a readBool nested inside one
-    # set_from_config, immediately followed by another) both get seen.
-    r"\"(?P<section>[^\"]+)\"\s*,\s*\"(?P<key>[^\"]+)\""
-    r"(?=[^;]*;.{0,400}?(?P<member>[A-Za-z_]\w*)\s*\.set_from_config\()",
+    r"\"(?P<section>[^\"]+)\"\s*,\s*\"(?P<key>[^\"]+)\"",
+    re.S,
+)
+
+# Save() writes every persisted option as
+#   ini.SetValue("Section", "Key", GetXValue(Instance()->Member.value_for_config()).c_str());
+# which is the one place OptiScaler states the key-to-member pairing outright.
+# Reading it there avoids guessing from statement shapes in Reload(), where an
+# option read into a local (`if (auto v = readEnum<...>(...)) X.set_from_config(*v)`)
+# sits next to an unrelated member and is easy to file under the wrong one.
+SAVE_RE = re.compile(
+    r"ini\.SetValue\(\s*\"(?P<section>[^\"]+)\"\s*,\s*\"(?P<key>[^\"]+)\"\s*,\s*"
+    r"Get\w+Value\(\s*Instance\(\)->(?P<member>[A-Za-z_]\w*)",
     re.S,
 )
 
 
 def parse_ini_map(source_text):
-    """(section, key) -> member, as spelled in Config::Reload."""
+    """(section, key) -> member and how it is read, from Config.cpp.
+
+    The member comes from Save(), which states the pairing unambiguously; only
+    keys Save() does not mention (options it writes with special handling, and
+    ones that are read but never saved) fall back to the Reload() heuristics.
+    """
     text = strip_comments(source_text)
     mapping = {}
+
+    # Reload(): which keys exist, and how each is parsed.
+    for match in READ_ANY_RE.finditer(text):
+        how = match.group("how")
+        key = f"{match.group('section')}.{match.group('key')}"
+        mapping.setdefault(key, {"member": None, "read": "Enum" if how.startswith("Enum") else how})
+
+    # Save(): the authoritative key -> member pairing.
+    for match in SAVE_RE.finditer(text):
+        key = f"{match.group('section')}.{match.group('key')}"
+        entry = mapping.setdefault(key, {"member": None, "read": None})
+        entry["member"] = match.group("member")
+
+    # Direct `X.set_from_config(read...(...))` where Save() did not name the key.
     for match in READ_RE.finditer(text):
+        key = f"{match.group('section')}.{match.group('key')}"
         how = match.group("how")
-        how = "Enum" if how.startswith("Enum") else how
-        mapping[f"{match.group('section')}.{match.group('key')}"] = {
-            "member": match.group("member"),
-            "read": how,
-        }
-    for match in DEFERRED_RE.finditer(text):
-        ini_key = f"{match.group('section')}.{match.group('key')}"
-        if ini_key in mapping:
-            continue
-        how = match.group("how")
-        mapping[ini_key] = {
-            "member": match.group("member"),
-            "read": "Enum" if how.startswith("Enum") else how,
-        }
+        entry = mapping.setdefault(key, {"member": None, "read": None})
+        entry["member"] = entry["member"] or match.group("member")
+        entry["read"] = entry["read"] or ("Enum" if how.startswith("Enum") else how)
+
+    # Anything still unnamed is a key Save() does not write directly and whose
+    # read does not sit inside a set_from_config; leave it unmapped so main()
+    # can report it rather than inventing a member.
     return mapping
 
 
@@ -264,27 +287,42 @@ def main():
     ini_map = parse_ini_map(source)
 
     by_name = {m["name"]: m for m in members}
-    unresolved = sorted({v["member"] for v in ini_map.values()} - set(by_name))
+    unresolved = sorted({v["member"] for v in ini_map.values() if v["member"]} - set(by_name))
     if unresolved:
         raise SystemExit(f"Config.cpp reads members absent from Config.h: {unresolved}")
 
     OUT_HEADER.parent.mkdir(parents=True, exist_ok=True)
     OUT_HEADER.write_text(emit_header(members), encoding="utf-8")
 
-    fields = {}
+    def read_of(kind):
+        if kind == "bool":
+            return "Bool"
+        if kind in ("int", "int32_t", "uint32_t", "UINT", "std::string", "std::wstring"):
+            return "Int"
+        if kind == "float":
+            return "Float"
+        return "Enum" if kind.startswith("enum:") else "Int"
+
+    fields, unmapped = {}, []
     for ini_key, info in sorted(ini_map.items()):
+        if not info["member"]:
+            unmapped.append(ini_key)
+            continue
         member = by_name[info["member"]]
         fields[ini_key] = {
             "member": member["name"],
             "kind": member["kind"],
-            "read": info["read"],
+            "read": info["read"] or read_of(member["kind"]),
         }
     OUT_JSON.write_text(json.dumps({"fields": fields}, indent=1, sort_keys=True), encoding="utf-8")
 
     print(f"members: {len(members)} (skipped {len(skipped)} non-data declarations)")
     print(f"ini keys mapped: {len(fields)}")
+    if unmapped:
+        print(f"ini keys without a member ({len(unmapped)}): {', '.join(unmapped)}")
     print(f"wrote {OUT_HEADER.relative_to(ROOT)} and {OUT_JSON.relative_to(ROOT)}")
-    for probe in ("FrameGen.Enabled", "Upscalers.Dx12Upscaler", "XeFG.InterpolationCount"):
+    for probe in ("FrameGen.Enabled", "Upscalers.Dx12Upscaler", "XeFG.InterpolationCount",
+                  "FSR.Fsr4GpuSupport", "FSR.Fsr4Model", "Sharpness.Sharpness"):
         print(f"  {probe:28} -> {fields.get(probe)}")
 
 

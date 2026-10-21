@@ -1,9 +1,58 @@
 # Changelog
 
 Newest first. Each release ships `Decky OptiScaler.zip` for Decky Loader's
-*Install from URL* (Developer mode), and bundles **OptiScaler 0.9.4**.
+*Install from URL* (Developer mode), and bundles **OptiScaler 10.0.0-pre1**.
 
 ## [Unreleased]
+
+### Fixed
+
+- **Live control never attached on v10.** v10 moved the OptiScaler libraries
+  into `<game>/OptiScaler/`, so the bundled ASI — which sits in
+  `OptiScaler/plugins/` — was deriving its folder by stepping up one level and
+  landing in `OptiScaler/`, while the panel reads and writes the control files
+  in the game folder where `OptiScaler.ini` lives. The ASI now reads the ini's
+  absolute path from OptiScaler's own `Config` and writes there, removing the
+  provisional status file it had already left in the wrong folder.
+
+## [0.0.9] - 2026-10-21
+
+FSR 4 Lite on the Steam Deck, on OptiScaler v10.
+
+### Changed
+
+- Bundled runtime upgraded to **OptiScaler 10.0.0-pre1** (324 settings across
+  37 sections). v10 renamed the DX12 FidelityFX backend from `fsr31` to `ffx`
+  (`ffx_12` for the DX11/Vulkan interop variants), moved the libraries into
+  `<game>/OptiScaler/`, and dropped `fakenvapi` and `amd_fidelityfx_dx12.dll`.
+- **FSR 4 — Steam Deck** is now **FSR 4 Lite — Steam Deck**, and needs no
+  download. The payload ships AMD's driver FSR libraries `amdxcffx64.dll` and
+  `amdvkffx64.dll`, and install writes `Fsr4GpuSupport=4` (INT8) and
+  `Fsr4Model=3` (INT8 Lite, the model meant for APUs), with
+  `Dx12Upscaler=ffx`, `Dx11Upscaler=ffx_12`, `VulkanUpscaler=ffx_12`,
+  `UpscalerIndex=0`. See [Steam Deck FSR 4](docs/steam-deck-fsr4.md).
+- `Fsr4Update` and `Fsr4ForceEnableInt8` are gone from v10; the Basic panel and
+  the compatibility-list planner now speak `Fsr4GpuSupport` / `Fsr4Model`.
+- **Live control is back.** The bundled ASI was rebuilt from `asi/` against the
+  v10 headers, so the Quick Access panel can again change frame generation, the
+  FidelityFX FG version, the upscaler and the FSR 4 model while the game runs.
+  The ASI mirrors v10's `Config` and `State` — including the two per-API FFX
+  upscaler lists and the FSR 4 enums — and validates every offset before writing.
+
+### Fixed
+
+- **Upgrading from 0.9.4 left the old layout behind.** Install now removes the
+  stale root-level upscalers, `fakenvapi.*`, `D3D12_Optiscaler/` and the old
+  live ASI, restoring any displaced game file instead of deleting it. The game's
+  `OptiScaler.ini`, REFramework, PDPerfPlugin and launch record are kept.
+- A folder the installer had just created for the new layout was being stashed
+  as if it were the game's own, which made uninstall leave it behind.
+- **The live-option map filed four settings under the wrong member.** The
+  generator that builds it read the key-to-member pairing out of `Reload()`,
+  where an option read into a local sits next to an unrelated member; it now
+  takes the pairing from `Save()`, which states it outright, so
+  `Fsr4GpuSupport`, `OutputScaling.Downscaler` and the two `fakenvapi` latency
+  options address the fields they name.
 
 ## [0.0.7] - 2026-09-18
 

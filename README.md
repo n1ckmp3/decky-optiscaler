@@ -10,7 +10,9 @@ configures [OptiScaler](https://github.com/optiscaler/OptiScaler) per game from 
 OptiScaler's settings, with a gamepad. The ones OptiScaler can change on the fly apply to the
 running game; the rest say plainly that they take effect on the next launch.
 
-OptiScaler v0.9.4 is bundled, so installing works offline and every game gets the same build.
+OptiScaler v10.0.0-pre1 is bundled, together with the driver FSR 4 libraries it reads
+(`amdxcffx64.dll` and `amdvkffx64.dll`, the latter carrying the INT8 Lite model), so
+installing works offline and every game gets the same build.
 
 > **Unofficial.** I am an independent developer with no connection to the OptiScaler project.
 > This plugin is not made, endorsed or supported by them — it bundles their release and drives
@@ -36,17 +38,22 @@ OptiScaler v0.9.4 is bundled, so installing works offline and every game gets th
   [REFramework](https://github.com/praydog/REFramework) installed first.
 - **Basic or Advanced settings.** Basic is a handful of controls (frame generation on/off, which
   generator, 2X/3X/4X, which upscaler), each driving several INI keys at once. Advanced gives
-  you all 288 settings across 34 sections, generated from the comments in `OptiScaler.ini` so
+  you all 324 settings across 37 sections, generated from the comments in `OptiScaler.ini` so
   they match the shipped build. Edits keep every comment in the file, and names are the
   overlay's own.
-- **FSR 4.1.1b on Steam Deck.** Close the game, then choose **FSR 4.1.1b — Steam Deck**
-  in Basic settings. One selection downloads the community RDNA2 ghosting fix and enables
-  INT8 upscaling. Frame generation stays separate. See [Steam Deck FSR 4](docs/steam-deck-fsr4.md)
-  for verification, rollback, and limitations.
-- **Changes settings while you play.** A bundled ASI plugin applies frame generation, the
-  FidelityFX FG version, the upscaler and the FSR version immediately from the Quick Access
+- **FSR 4 Lite on Steam Deck.** Every install writes the v10 switches that reach FSR 4 on
+  RDNA 2 — `Fsr4GpuSupport=4` (INT8, "can enable it on unsupported GPUs") and `Fsr4Model=3`
+  (INT8 Lite, the smaller model meant for APUs) — using the driver DLL shipped in the payload,
+  so there is nothing to download. **FSR 4 Lite — Steam Deck** in Basic settings (re)applies
+  them; **FSR 4** is the native-detection choice for RDNA 3/4. See
+  [Steam Deck FSR 4](docs/steam-deck-fsr4.md) for verification, rollback, and limitations.
+- **Changes settings while you play.** A small ASI plugin can apply frame generation, the
+  FidelityFX FG version, the upscaler and the FSR 4 model immediately from the Quick Access
   panel — next to what the game actually ended up running and, with frame generation on, both
-  frame rates. See [Live in-game control](#live-in-game-control).
+  frame rates. The ASI is built from `asi/` against the same OptiScaler release the plugin
+  bundles (v10 here) and validates OptiScaler's in-memory layout before it writes anything, so
+  a release it does not recognise reports live control as unavailable rather than guessing.
+  See [Live in-game control](#live-in-game-control).
 - **Doesn't lose your files, or your launch options.** Anything an install would overwrite is
   moved into `decky_optiscaler_backup_files/` and put back on uninstall. The launch options the
   game had beforehand are kept the same way, so removing OptiScaler can offer to restore them
@@ -85,18 +92,25 @@ See the [changelog](CHANGELOG.md) for what changed.
 
 OptiScaler reads its INI once, at startup — no file watcher, no IPC — and its overlay gets away
 with live changes only because it *is* the game process. So the plugin ships a small ASI plugin
-that OptiScaler loads into the game and that makes the same writes the overlay makes. That is
-what lets the Quick Access panel change, mid-game:
+that OptiScaler loads into the game and that makes the same writes the overlay makes. It is
+compiled from `asi/` against the bundled OptiScaler release — v10 — and every offset it computes
+into OptiScaler's `Config` and `State` is checked against what is actually there before it writes,
+so an unrecognised release leaves live control reporting itself unavailable instead of writing
+into the wrong object. That is what lets the Quick Access panel change, mid-game:
 
 - **Frame generation** — `Config::FGEnabled`, read every frame.
 - **Upscaler** — the backend id into `State::newBackend`, then every entry of
-  `State::changeBackend` marked. The overlay's "Change Upscaler" in full.
-- **FidelityFX FG version** — `Config::FfxFGIndex`, then `State::FGchanged` and
-  `State::SCchanged`, so the generator's context is destroyed and rebuilt on the new index. The
+  `State::changeBackend` marked. The overlay's "Change Upscaler" in full. v10's ids are `ffx`
+  and `ffx_12` where 0.9.4 used `fsr31` and `fsr31_12`; both spellings are accepted.
+- **FidelityFX FG version** — `Config::FfxFGIndex`, then `State::fgChanged` and
+  `State::scChanged`, so the generator's context is destroyed and rebuilt on the new index. The
   versions offered are the ones the SDK reported to *that* game.
 - **FSR version** — `Config::FfxUpscalerIndex` plus the same feature rebuild. One backend id
-  covers every FSR from 2.3.4 to 4.1.1, so the exact version comes from the list the running
-  game reported — the same one its overlay names in the title bar.
+  covers every FSR from 2.3.4 to 4.1.2, so the exact version comes from the list the running
+  game reported — the same one its overlay names in the title bar. v10 keeps a separate list per
+  graphics API, so the plugin reads the Dx12 one and falls back to Vulkan.
+- **FSR 4 model** — `Config::Fsr4GpuSupport` and `Config::Fsr4Model`, the two v10 enums behind
+  the FSR 4 Lite switch.
 
 It also reads out both frame rates: what the game renders next to what reaches the screen, and
 says when the generator is switched on but not actually inserting frames.
@@ -135,7 +149,9 @@ python3 scripts/package.py           # -> out/Decky OptiScaler.zip
 ```
 
 `asi/build.sh` cross-compiles a Windows x64 DLL with `zig cc`, so you don't need MSVC or a
-Windows machine; `brew install zig` is the only prerequisite. Packaging without the ASI works
+Windows machine; `brew install zig` is the only prerequisite. It regenerates
+`asi/generated/config_mirror.h` from the OptiScaler headers in `asi/optiscaler_ref/` first, so
+that mirror is always the layout the ASI was built against. Packaging without the ASI works
 fine, live control just reports itself as unavailable.
 
 Tests:
