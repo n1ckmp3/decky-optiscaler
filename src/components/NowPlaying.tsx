@@ -137,7 +137,6 @@ export function NowPlaying({
           auto={auto}
           onLiveChanged={() => void refresh()}
           fsr4Build={config.fsr4Build}
-          onEnableFsr4={config.enableFsr4}
           onApply={config.setOptions}
         />
       )}

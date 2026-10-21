@@ -17,6 +17,9 @@ export const UPSCALER_LABELS: Record<string, string> = {
   // OptiScaler shows "FSR 3.X/4" when the GPU and settings make FSR 4 possible
   // and plain "FSR 3.X" otherwise; it is one backend either way.
   fsr31: "FSR 3.X/4",
+  // v10 renamed the DX12 FidelityFX backend to `ffx`; the interop variants kept
+  // the `_12` suffix. Same effect, different ids.
+  ffx: "FSR 3.X/4",
   dlss: "DLSS",
   dlssd: "DLSSD",
   // DX11 / Vulkan interop variants
@@ -24,6 +27,7 @@ export const UPSCALER_LABELS: Record<string, string> = {
   fsr21_12: "FSR 2.1.2 w/Dx12",
   fsr22_12: "FSR 2.2.1 w/Dx12",
   fsr31_12: "FSR 3.X/4 w/Dx12",
+  ffx_12: "FSR 3.X/4 w/Dx12",
 };
 
 /** The FG Input combo. */

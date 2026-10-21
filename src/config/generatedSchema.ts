@@ -17,7 +17,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
       "xess_12",
       "fsr21_12",
       "fsr22_12",
-      "fsr31_12",
+      "ffx_12",
       "dlss"
     ],
     "optionLabels": {
@@ -27,7 +27,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
       "xess_12": "xess_12 \u2014 dx11on12",
       "fsr21_12": "fsr21_12 \u2014 dx11on12",
       "fsr22_12": "fsr22_12 \u2014 dx11on12",
-      "fsr31_12": "fsr31_12 \u2014 dx11on12, FSR4"
+      "ffx_12": "ffx_12 \u2014 FSR 2.3; 3.1; 4.x"
     }
   },
   {
@@ -35,17 +35,17 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "Dx12Upscaler",
     "label": "Dx12 Upscaler",
     "description": "Select Upscaler for Dx12 games",
-    "default": "xess",
+    "default": "DLSS when capable gpu, FSR4 when capable gpu, XeSS otherwise",
     "type": "enum",
     "options": [
       "xess",
       "fsr21",
       "fsr22",
-      "fsr31",
+      "ffx",
       "dlss"
     ],
     "optionLabels": {
-      "fsr31": "fsr31 \u2014 also for FSR4"
+      "ffx": "ffx \u2014 FSR 2.3; 3.1; 4.x"
     }
   },
   {
@@ -58,57 +58,73 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "options": [
       "fsr21",
       "fsr22",
-      "fsr31",
+      "ffx",
       "xess",
       "fsr21_12",
-      "fsr31_12",
+      "ffx_12",
       "dlss"
     ],
     "optionLabels": {
       "fsr21": "fsr21 \u2014 native VK",
       "fsr22": "fsr22 \u2014 native VK",
-      "fsr31": "fsr31 \u2014 native VK",
+      "ffx": "ffx \u2014 native FSR 2.3; 3.1",
       "xess": "xess \u2014 native VK",
       "fsr21_12": "fsr21_12 \u2014 VKon12",
-      "fsr31_12": "fsr31_12 \u2014 VKon12, FSR4"
+      "ffx_12": "ffx_12 \u2014 FSR 2.3; 3.1; 4.x"
     }
   },
   {
     "section": "FrameGen",
     "key": "Enabled",
     "label": "Enabled",
-    "description": "Enables Frame Generation",
-    "default": "false",
-    "type": "bool"
+    "description": "Enables Frame Generation true or false - Default (auto) is false With dlssg FG Input, auto follows the game's DLSS FG setting (on/off and frame multiplier)",
+    "default": "auto",
+    "type": "string"
   },
   {
     "section": "FrameGen",
     "key": "FGInput",
     "label": "FG Input",
-    "description": "Selected FG Input/Source dlssg     - Can be used with any FG Output. Supports Hudless out of the box. Limited to games that use Streamline v2 and DLSSG nukems    - Limited to FSR 3 FG. Requires DLSSG in the game. Supports Hudless out of the box. Uses Streamline swapchain for pacing. fsrfg     - Can be used with any FG Output. Supports Hudless out of the box. upscaler  - Upscaler must be enabled. Can be used with any FG Output, but might be imperfect with some. To prevent UI glitching, Hudfix is required fsrfg30   - Can be used with any FG Output. Supports Hudless out of the box.",
+    "description": "Selected FG Input/Source dlssg    - Can be used with any FG Output. Supports Hudless out of the box. Limited to games that use Streamline and DLSSG nvngxfg  - Limited to FSR 3 FG (MFG with DLSS Enabler's dll). Requires DLSSG in the game. Supports Hudless out of the box. Uses Streamline swapchain for pacing. fsrfg    - Can be used with any FG Output. Supports Hudless out of the box. upscaler - Upscaler must be enabled. Can be used with any FG Output, but might be imperfect with some. To prevent UI glitching, Hudfix is required fsrfg30  - Can be used with any FG Output. Supports Hudless out of the box. xefg     - Can be used with any FG Output. Supports Hudless out of the box. With other outputs than xefg, the game's XeLL can go to any low latency output.",
     "default": "nofg",
     "type": "enum",
     "options": [
       "nofg",
       "dlssg",
-      "nukems",
+      "nvngxfg",
       "fsrfg",
       "upscaler",
-      "fsrfg30"
+      "fsrfg30",
+      "xefg"
     ]
   },
   {
     "section": "FrameGen",
     "key": "FGOutput",
     "label": "FG Output",
-    "description": "Selected FG Output fsrfg  - requires amd_fidelityfx_dx12.dll or amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll xefg   - requires libxess_fg.dll, libxell.dll and latest fakenvapi dll nukems - requires dlssg_to_fsr3_amd_is_better.dll, AMD/Intel GPU users need to add fakenvapi as well",
+    "description": "Selected FG Output fsrfg          - requires amd_fidelityfx_dx12.dll OR amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll xefg           - requires libxess_fg.dll and libxell.dll dlssg          - requires streamline dlls inside 'OptiScaler/streamline' folder + nvngx_dlssg.dll",
     "default": "nofg",
     "type": "enum",
     "options": [
       "nofg",
       "fsrfg",
       "xefg",
-      "nukems"
+      "dlssg"
+    ]
+  },
+  {
+    "section": "FrameGen",
+    "key": "FGNvngxReplacement",
+    "label": "FG Nvngx Replacement",
+    "description": "Selected FG Nvngx Replacement Nvngx FG is the lower level DLSSG provider. FGInput=NvngxFG or FGOutput=DLSSG need to be used for this setting to do anything For example to use Nukems in a game that only has upscaling: FGInput=upscaler, FGOutput=dlssg, FGNvngxReplacement=Nukems To use Arturs in a game that already supports DLSSG: FGInput=nvngxfg, FGOutput=auto, FGNvngxReplacement=Arturs None      - No replacement Nukems    - requires dlssg_to_fsr3_amd_is_better.dll, FSR 3 FG Arturs    - requires dlss-enabler-headless.dll, FSR 3 MFG FFX       - requires amd_fidelityfx_dx12.dll OR amd_fidelityfx_loader_dx12.dll + amd_fidelityfx_framegeneration_dx12.dll, FSRFG 3 or 4 Combo     - requires the same as FFX AND Arturs, uses FFX for middle frames and Enabler for the rest. Allow for combining FSR 4 FG and Enabler in 4x and 6x modes",
+    "default": "Nukems",
+    "type": "enum",
+    "options": [
+      "None",
+      "Nukems",
+      "Arturs",
+      "FFX",
+      "Combo"
     ]
   },
   {
@@ -257,7 +273,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "SkipResizeBuffers",
     "label": "Skip Resize Buffers",
     "description": "Skip ResizeBuffers call to swapchain If old and new descriptions are the same Prevents crashes after ResizeBuffers calls",
-    "default": "false",
+    "default": "true",
     "type": "bool"
   },
   {
@@ -275,6 +291,16 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "description": "Normally after ResizeBuffers call swapchain current index should be 0, when this option enabled OptiScaler will try to set swapchain index by calling present until index reaches 0 Might cause crashes or fix them",
     "default": "false",
     "type": "bool"
+  },
+  {
+    "section": "FrameGen",
+    "key": "HudCutoff",
+    "label": "Hud Cutoff",
+    "description": "Cutoffs transparency from UI to help with interpolation Only works with FSR FG Output and NvngxFG",
+    "default": "0.0",
+    "type": "float",
+    "min": 0.0,
+    "max": 1.0
   },
   {
     "section": "FSRFG",
@@ -403,6 +429,64 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
   },
   {
     "section": "XeFG",
+    "key": "DynamicMFG",
+    "label": "Dynamic MFG",
+    "description": "Dynamic MFG: changes the multiplier on the fly to hit FramerateTargetDMFG, InterpolationCount sets the highest multiplier it may use (at 2X it turns FG on and off)",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "XeFG",
+    "key": "FramerateTargetDMFG",
+    "label": "Framerate Target DMFG",
+    "description": "Presented FPS Dynamic MFG aims for (10 or more), never above FramerateLimit",
+    "default": "0.0",
+    "type": "string"
+  },
+  {
+    "section": "XeFG",
+    "key": "RoundingDMFG",
+    "label": "Rounding DMFG",
+    "description": "Where FPS may land, as multipliers only come in steps: 0 = at most the target, 1 = around the target, 2 = at least the target",
+    "default": "1",
+    "type": "enum",
+    "options": [
+      "0",
+      "1",
+      "2"
+    ],
+    "optionLabels": {
+      "0": "at most the target",
+      "1": "around the target",
+      "2": "at least the target"
+    }
+  },
+  {
+    "section": "XeFG",
+    "key": "DynamicAllow1X",
+    "label": "Dynamic Allow1 X",
+    "description": "Lets Dynamic MFG turn frame generation off when the game alone gets close enough to the target",
+    "default": "true",
+    "type": "bool"
+  },
+  {
+    "section": "XeFG",
+    "key": "TargetAsCapDMFG",
+    "label": "Target As Cap DMFG",
+    "description": "Also limits FPS to FramerateTargetDMFG and uses the lowest multiplier that reaches it (RoundingDMFG and DynamicAllow1X don't apply)",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "XeFG",
+    "key": "OverrideInterpolationCount",
+    "label": "Override Interpolation Count",
+    "description": "For overriding the game's own XeFG count with FGInput=xefg, 0 = off",
+    "default": "no override",
+    "type": "string"
+  },
+  {
+    "section": "XeFG",
     "key": "DepthInverted",
     "label": "Depth Inverted",
     "description": "XeFG DepthInverted flag",
@@ -450,6 +534,68 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "type": "bool"
   },
   {
+    "section": "DLSSG",
+    "key": "InterpolationCount",
+    "label": "Interpolation Count",
+    "description": "Sets interpolated frame count (MFG)",
+    "default": "1",
+    "type": "enum",
+    "options": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+    ],
+    "optionLabels": {
+      "1": "2X",
+      "2": "3X",
+      "3": "4X",
+      "4": "5X",
+      "5": "6X"
+    }
+  },
+  {
+    "section": "DLSSG",
+    "key": "UseGamesReflexMarkers",
+    "label": "Use Games Reflex Markers",
+    "description": "",
+    "default": "true",
+    "type": "bool"
+  },
+  {
+    "section": "DLSSG",
+    "key": "OverrideInterpolationCount",
+    "label": "Override Interpolation Count",
+    "description": "For overriding game's value sent to SL, could be Nvngx FG, could be noFG when someone uses real DLSSG",
+    "default": "no override",
+    "type": "string"
+  },
+  {
+    "section": "DLSSG",
+    "key": "OverrideForceDMFG",
+    "label": "Override Force DMFG",
+    "description": "Try to force Dynamic MFG in game's native DLSSG. Requires Nvidia Blackwell or any AMD/Intel (Nvngx FG) Requires Streamline 2.11",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "DLSSG",
+    "key": "ForceDMFG",
+    "label": "Force DMFG",
+    "description": "Force Dynamic MFG in Opti's own DLSSG output. Requires Nvidia Blackwell or any AMD/Intel (Nvngx FG) Requires Streamline 2.11",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "DLSSG",
+    "key": "FramerateTargetDMFG",
+    "label": "Framerate Target DMFG",
+    "description": "Sets the FPS target for dynamic multi frame generation When non-zero, you won't be able to manually adjust the FG multiplier Requires DMFG to be enabled",
+    "default": "0.0",
+    "type": "string"
+  },
+  {
     "section": "OptiFG",
     "key": "DisableHUDFix",
     "label": "Disable HUD Fix",
@@ -480,6 +626,22 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "label": "HUD Fix Extended",
     "description": "Extended HUDless checks for more image formats Might cause crash and slowdowns.",
     "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "OptiFG",
+    "key": "HUDFixUITexture",
+    "label": "HUD Fix UI Texture",
+    "description": "Vulkan, use the UI texture a game blends on the frame in its last compute pass",
+    "default": "true",
+    "type": "bool"
+  },
+  {
+    "section": "OptiFG",
+    "key": "HUDFixUIUnblend",
+    "label": "HUD Fix UI Unblend",
+    "description": "Vulkan, rebuild the hudless by removing that UI texture from the frame FSR-FG only gets the UI this way, DLSSG also takes the UI texture directly",
+    "default": "true",
     "type": "bool"
   },
   {
@@ -566,7 +728,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "OptiFG",
     "key": "HUDFixRelaxedResolutionCheck",
     "label": "HUD Fix Relaxed Resolution Check",
-    "description": "Relax resolution checks for Hudless by 32 pixels Helps games which use black borders for some resolutions and screen ratios (e.g. Witcher 3)",
+    "description": "Relax Hudless resolution checks by up to 5% per axis Helps games which use black borders for some resolutions and screen ratios (e.g. Witcher 3)",
     "default": "false",
     "type": "bool"
   },
@@ -576,6 +738,14 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "label": "HUD Fix Immediate",
     "description": "Enables capturing of resources before shader execution. Increase hudless capture chances but might cause capturing of unnecessary resources.",
     "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "OptiFG",
+    "key": "HUDFixPersistentBindings",
+    "label": "HUD Fix Persistent Bindings",
+    "description": "New advanced binding tracking system for Hudless resources Set false for old Hudfix behavior",
+    "default": "true",
     "type": "bool"
   },
   {
@@ -782,7 +952,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Framerate",
     "key": "FramerateLimit",
     "label": "Framerate Limit",
-    "description": "Frame rate limit that uses Reflex, therefore the game has to support Reflex and have it enabled AMD users can use Fakenvapi to get this feature working",
+    "description": "Frame rate limit that uses Reflex whenever possible This includes any tech that replaces Reflex like XeLL or AntiLag 2",
     "default": "0.0",
     "type": "float"
   },
@@ -799,7 +969,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "CreateHeaps",
     "label": "Create Heaps",
     "description": "Creating heap objects for XeSS before init",
-    "default": "false",
+    "default": "true",
     "type": "bool"
   },
   {
@@ -980,19 +1150,25 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
   },
   {
     "section": "FSR",
-    "key": "Fsr4Update",
-    "label": "Fsr4 Update",
-    "description": "Enables updating of FSR3.X to FSR4",
-    "default": "auto",
-    "type": "bool"
-  },
-  {
-    "section": "FSR",
-    "key": "Fsr4ForceEnableInt8",
-    "label": "Fsr4 Force Enable Int8",
-    "description": "Enables INT8 model for all GPUs",
-    "default": "false",
-    "type": "bool"
+    "key": "Fsr4GpuSupport",
+    "label": "Fsr4 Gpu Support",
+    "description": "Overrides the FSR 4 support Opti detects for the GPU, can enable it on unsupported GPUs or limit it to INT8 Don't fool yourself when trying to force FP8 on actually unsupported GPUs, driver has a FSR 3 fallback INT8-2 is the RDNA2 model, INT8 Lite is a smaller model meant for APUs",
+    "default": "0",
+    "type": "enum",
+    "options": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "optionLabels": {
+      "0": "No override",
+      "1": "FP8",
+      "2": "INT8",
+      "3": "INT8-2",
+      "4": "INT8 Lite"
+    }
   },
   {
     "section": "FSR",
@@ -1020,11 +1196,23 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
   },
   {
     "section": "FSR",
-    "key": "Fsr4EnableDebugView",
-    "label": "Fsr4 Enable Debug View",
-    "description": "Enable FSR4 Debug View visualization Might consume more VRAM",
-    "default": "false",
-    "type": "bool"
+    "key": "Fsr4Model",
+    "label": "Fsr4 Model",
+    "description": "Select FSR 4 model, can be changed in the menu while the game runs Only for FSR 4.1.1 and newer, FP8 needs RDNA 4 or RDNA 3 on Linux with the WMMA workaround and isn't available when Fsr4GpuSupport limits the GPU to INT8 INT8 RDNA2 and INT8 Lite are only in the Vulkan driver FSR (amdvkffx64) INT8 Lite only uses standard shader features so it can run on any GPU",
+    "default": "the best one the GPU supports",
+    "type": "enum",
+    "options": [
+      "0",
+      "1",
+      "2",
+      "3"
+    ],
+    "optionLabels": {
+      "0": "FP8",
+      "1": "INT8",
+      "2": "INT8 RDNA2",
+      "3": "INT8 Lite"
+    }
   },
   {
     "section": "FSR",
@@ -1070,7 +1258,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "FSR",
     "key": "FsrAgilitySDKUpgrade",
     "label": "Fsr Agility SDK Upgrade",
-    "description": "Updates the DirectX 12 Agility SDK Enabling the use of FSR4 on Windows 10 in older titles like Cyberpunk 2077 You MUST copy D3D12_OptiScaler folder next to game's exe!",
+    "description": "Updates the DirectX 12 Agility SDK Enabling the use of FSR4 on Windows 10 in older titles like Cyberpunk 2077 You MUST copy D3D12_OptiScaler folder into the OptiScaler folder!",
     "default": "false",
     "type": "bool"
   },
@@ -1483,10 +1671,34 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "inheritedFrom": "RenderPresetPerformance"
   },
   {
-    "section": "Nukems",
+    "section": "NvngxFG",
     "key": "MakeDepthCopy",
     "label": "Make Depth Copy",
     "description": "Fix broken visuals in some games (mostly non-UE) on AMD GPUs under Windows Can cause stutters, so best to use only when necessary and mentioned",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "NvngxFG",
+    "key": "DispatchFlags",
+    "label": "Dispatch Flags",
+    "description": "Any set of flags is accepted, for example 0x14100000 For reference https://github.com/artur-graniszewski/dlss-enabler-main/blob/a92464d468eb0d91ae17befa66c6bf6229f20b9f/Utils/DlssgProxy.cpp#L1033",
+    "default": "0x10000000 (IGNORE_UI_TEXTURE)",
+    "type": "string"
+  },
+  {
+    "section": "NvngxFG",
+    "key": "ShowDebug",
+    "label": "Show Debug",
+    "description": "Controls value set to DLSSG.ShowDebug Seems to be displaying just the interpolated frames",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "NvngxFG",
+    "key": "DisableHudless",
+    "label": "Disable Hudless",
+    "description": "Disable hudless resource being sent to DLSSG Might be required for some sets of DispatchFlags, see the reference",
     "default": "false",
     "type": "bool"
   },
@@ -1495,7 +1707,7 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "OptiDllPath",
     "label": "Opti Dll Path",
     "description": "Main folder for OptiScaler to check dll files below",
-    "default": ".\\",
+    "default": ".\\OptiScaler",
     "type": "string"
   },
   {
@@ -1627,6 +1839,14 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "type": "float",
     "min": 0.5,
     "max": 2.0
+  },
+  {
+    "section": "Menu",
+    "key": "Height",
+    "label": "Height",
+    "description": "In-game ImGui menu height, before applying menu scale Can be changed by dragging the bottom right corner of the menu",
+    "default": "700.0",
+    "type": "string"
   },
   {
     "section": "Menu",
@@ -1776,6 +1996,14 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
   },
   {
     "section": "Menu",
+    "key": "OverlaysUseTheme",
+    "label": "Overlays Use Theme",
+    "description": "Overlays uses the theme colors",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "Menu",
     "key": "LightTheme",
     "label": "Light Theme",
     "description": "Enables Light Theme for Menu",
@@ -1838,7 +2066,23 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Menu",
     "key": "BGColorA",
     "label": "BG Color A",
-    "description": "Background alpha for the menu 0 is transparent and 1 is opaque 0.0 to 1.0 - Default (auto) 0.99",
+    "description": "Background alpha for the menu 0 is transparent and 1 is opaque 0.0 to 1.0 - Default (auto) 0.93",
+    "default": "auto",
+    "type": "string"
+  },
+  {
+    "section": "Menu",
+    "key": "Blur",
+    "label": "Blur",
+    "description": "Blur the game image behind the menu, visible when background alpha is below 1 Only supported by the overlay menu (DirectX 11, DirectX 12 and Vulkan)",
+    "default": "auto",
+    "type": "bool"
+  },
+  {
+    "section": "Menu",
+    "key": "BlurStrength",
+    "label": "Blur Strength",
+    "description": "Strength of the blur behind the menu 0.0 to 4.0 - Default (auto) 1.0",
     "default": "auto",
     "type": "string"
   },
@@ -2038,17 +2282,73 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "section": "Plugins",
     "key": "LoadReshade",
     "label": "Load Reshade",
-    "description": "Loads Reshade64.dll from game's exe folder Rename Reshade dll to ReShade64.dll, put next to OptiScaler and set to true",
+    "description": "Loads Reshade64.dll from game's exe folder Rename Reshade dll to ReShade64.dll, put next to OptiScaler and set to true d3d12-ReShade64.dll is also accepted (ReShade checks for \"d3d12\" in its name)",
     "default": "false",
     "type": "bool"
   },
   {
-    "section": "NvApi",
-    "key": "OverrideNvapiDll",
-    "label": "Override Nvapi Dll",
-    "description": "Override loading of nvapi64.dll",
+    "section": "Plugins",
+    "key": "LoadCustomAmdxc64OnRdna2",
+    "label": "Load Custom Amdxc64 On Rdna2",
+    "description": "Loads custom amdxc64.dll for all detected RDNA 2 GPUs OptiScaler loads it from OptiDllPath, e.g. \".\\OptiScaler\\amdxc64.dll\"",
     "default": "false",
     "type": "bool"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "UseFakenvapi",
+    "label": "Use Fakenvapi",
+    "description": "Use fakenvapi when nvapi64.dll is missing. fakenvapi replaces nvapi calls allowing for features like AntiLag 2 or XeLL to replace Reflex Sometimes also required for DLSS/DLSSG to show up",
+    "default": "true",
+    "type": "bool"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "ForceXeLL",
+    "label": "Force Xe LL",
+    "description": "Allow XeLL to work without FG on non-Intel cards, Requires updated libxell + libxess_fg Disables FG options",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "ForceLatencyFlex",
+    "label": "Force Latency Flex",
+    "description": "Tries to use LatencyFlex even when better options are avaliable Doesn't take effect when using XeFG",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "LatencyFlexMode",
+    "label": "Latency Flex Mode",
+    "description": "Controls how latencyflex works 0 = conservative 1 = aggressive, will improve latency but in some cases will lower fps more than expected 2 = use reflex frame ids, some games are not compatible (i.e. cyberpunk) and will fallback to aggressive",
+    "default": "0",
+    "type": "string"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "ForceReflex",
+    "label": "Force Reflex",
+    "description": "Force Reflex state, useful for games that only enable Reflex when using DLSSG without a separate toggle for Reflex 0 - follow in-game setting, 1 - force disable, 2 - force enable",
+    "default": "0",
+    "type": "string"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "LowLatencyInput",
+    "label": "Low Latency Input",
+    "description": "Low latency input, the game's low latency that OptiScaler translates 2 - AntiLag 2, 3 - Reflex, 4 - XeLL, 5 - UE low latency The game's own XeFG (also the XeFG input to XeFG output) keeps the game's XeLL, only the FPS limit is OptiScaler's Default (auto) uses the best one the game sends: Reflex, XeLL when enabled in the game, AntiLag 2, UE low latency, XeLL when not enabled in the game (XeLL first with the XeFG input while the game has it enabled, AntiLag 2 first while the game's FSR-FG reports its frames through it)",
+    "default": "auto",
+    "type": "string"
+  },
+  {
+    "section": "fakenvapi",
+    "key": "LowLatencyOutput",
+    "label": "Low Latency Output",
+    "description": "Low latency output, what the input is translated to 2 - LatencyFlex, 3 - AntiLag 2, 4 - XeLL, 6 - Reflex (Nvidia), 7 - FPS Limiter (only limits the FPS) OptiScaler's XeFG always uses XeLL, the game's own XeFG its own XeLL",
+    "default": "the best one for your current setup",
+    "type": "string"
   },
   {
     "section": "NvApi",
@@ -2060,9 +2360,9 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
   },
   {
     "section": "NvApi",
-    "key": "DontUseFakenvapiForXeLLOnNvidia",
-    "label": "Dont Use Fakenvapi For Xe LL On Nvidia",
-    "description": "Do not use fakenvapi for converting Reflex calls to XeLL calls on Nvidia GPUs",
+    "key": "DisableOTA",
+    "label": "Disable OTA",
+    "description": "Disables OTA of streamline plugins Set to true if you are having errors caused by OTA",
     "default": "false",
     "type": "bool"
   },
@@ -2105,6 +2405,14 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "description": "Only hook ntdll.dll methods, skip kernel32.dll and kernelbase.dll hooks",
     "default": "true",
     "type": "bool"
+  },
+  {
+    "section": "Sharpness",
+    "key": "Shader",
+    "label": "Shader",
+    "description": "Options are: RCAS - AMD's Robust Contrast-Adaptive Sharpening DA - Enables Depth-based edge detection for sharpening. Reduces sharpening across object boundaries to prevent halos and artifacts. The farther away is the object, the more sharpening is applied (limited to 1.0) Recommended for scenes with complex geometry or upscaling. LCDA - Local contrast version of the above DA",
+    "default": "rcas",
+    "type": "string"
   },
   {
     "section": "Sharpness",
@@ -2229,9 +2537,9 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "Contrast",
     "label": "Contrast",
     "description": "Contrast based sharpening value Higher values increases sharpness at high contrast areas. High values might cause graphical GLITCHES when used with high sharpness values !!!",
-    "default": "-0.3",
+    "default": "0.0",
     "type": "float",
-    "min": -2.0,
+    "min": 0.0,
     "max": 2.0
   },
   {
@@ -2239,30 +2547,6 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "key": "SharpenerDebug",
     "label": "Sharpener Debug",
     "description": "Enable Debug Highlighting for Motion/DA Sharpening Reddish hue for added, greenish for reduced sharpness Blue tint for detected edges in Depth Aware sharpening",
-    "default": "false",
-    "type": "bool"
-  },
-  {
-    "section": "CAS",
-    "key": "UseDepthAwareSharpen",
-    "label": "Use Depth Aware Sharpen",
-    "description": "Enables Depth-Aware RCAS sharpening. Reduces sharpening across object boundaries to prevent halos and artifacts. The farther away is the object, the more sharpening is applied (limited to 1.0) Recommended for scenes with complex geometry or upscaling.",
-    "default": "false",
-    "type": "bool"
-  },
-  {
-    "section": "CAS",
-    "key": "UseDASDepthAwareSharpen",
-    "label": "Use DAS Depth Aware Sharpen",
-    "description": "Enables Depth-Aware Directional Adaptive Sharpening (DAS). Reduces sharpening across object boundaries to prevent halos and artifacts. The farther away is the object, the more sharpening is applied (limited to 1.0) Recommended for scenes with complex geometry or upscaling.",
-    "default": "false",
-    "type": "bool"
-  },
-  {
-    "section": "CAS",
-    "key": "DADepthIsLinear",
-    "label": "DA Depth Is Linear",
-    "description": "Indicates whether the input depth is already linear. Enable if depth represents real distance (linear space). Disable if using hardware depth (non-linear), which will be linearized in the shader. Incorrect setting will cause broken edge detection.",
     "default": "false",
     "type": "bool"
   },
@@ -2293,6 +2577,84 @@ export const GENERATED_OPTIONS: OptionMeta[] = [
     "description": "Clamps the final image to the [0, 1] range. Prevents overshoot artifacts such as bright halos or negative colors. Recommended for LDR pipelines; optional for HDR depending on tone-mapping.",
     "default": "false",
     "type": "bool"
+  },
+  {
+    "section": "Magnifier",
+    "key": "Enabled",
+    "label": "Enabled",
+    "description": "Enables magnifier By default, only visible when menu is visible and follows the cursor",
+    "default": "false",
+    "type": "bool"
+  },
+  {
+    "section": "Magnifier",
+    "key": "Size",
+    "label": "Size",
+    "description": "Radius of the magnifier at % of screen height",
+    "default": "15.0",
+    "type": "float"
+  },
+  {
+    "section": "Magnifier",
+    "key": "ZoomFactor",
+    "label": "Zoom Factor",
+    "description": "The zoom factor of the magnifier",
+    "default": "4",
+    "type": "int",
+    "min": 2,
+    "max": 20
+  },
+  {
+    "section": "Magnifier",
+    "key": "BorderSize",
+    "label": "Border Size",
+    "description": "Black border width of the magnifier, as % of screen height",
+    "default": "0.3",
+    "type": "float",
+    "min": 0.0,
+    "max": 2.0
+  },
+  {
+    "section": "Magnifier",
+    "key": "CursorOffsetX",
+    "label": "Cursor Offset X",
+    "description": "Position offset of the magnifier in relation to the mouse position, in pixels",
+    "default": "0",
+    "type": "int",
+    "min": -1000,
+    "max": 1000
+  },
+  {
+    "section": "Magnifier",
+    "key": "CursorOffsetY",
+    "label": "Cursor Offset Y",
+    "description": "",
+    "type": "int",
+    "min": -1000,
+    "max": 1000,
+    "default": "auto",
+    "inheritedFrom": "CursorOffsetX"
+  },
+  {
+    "section": "Magnifier",
+    "key": "StaticPosX",
+    "label": "Static Pos X",
+    "description": "Static position of the magnifier, as % of screen Having both values set will switch the magnifier to a static mode In static mode, the magnifier is always visible, even when the menu is not",
+    "default": "none",
+    "type": "int",
+    "min": 0,
+    "max": 100
+  },
+  {
+    "section": "Magnifier",
+    "key": "StaticPosY",
+    "label": "Static Pos Y",
+    "description": "",
+    "type": "int",
+    "min": 0,
+    "max": 100,
+    "default": "auto",
+    "inheritedFrom": "StaticPosX"
   },
   {
     "section": "Log",

@@ -39,26 +39,30 @@ function upscalerPreset(
   dx12: string,
   dx11: string,
   vulkan: string,
-  fsr4Update?: boolean,
-  int8?: boolean
+  fsr4?: "auto" | "int8-lite" | "off"
 ): Preset {
   const changes = [
     change("Upscalers", "Dx12Upscaler", dx12),
     change("Upscalers", "Dx11Upscaler", dx11),
     change("Upscalers", "VulkanUpscaler", vulkan),
   ];
-  if (fsr4Update !== undefined) {
-    changes.push(change("FSR", "Fsr4Update", fsr4Update ? "true" : "false"));
-    // UpscalerIndex picks which FSR generation the fsr31 backend runs.
-    // Its "auto" resolves to FSR3 on anything that is not RDNA4.
-    changes.push(change("FSR", "UpscalerIndex", fsr4Update ? "0" : "1"));
-  }
-  // Only the presets that make a claim about FSR 4 say anything about the INT8
-  // override. XeSS and DLSS have no stake in it, and writing it there would be
-  // clearing a setting on the way past — the one thing that makes FSR 4
-  // reachable on a Deck that does not have it natively.
-  if (int8 !== undefined) {
-    changes.push(change("FSR", "Fsr4ForceEnableInt8", int8 ? "true" : "false"));
+  if (fsr4 === "auto") {
+    // Let OptiScaler trust its own GPU detection (RDNA 3/4), and ask for the
+    // FSR 4 backend where "auto" would otherwise stay on FSR 3.x.
+    changes.push(change("FSR", "Fsr4GpuSupport", AUTO));
+    changes.push(change("FSR", "Fsr4Model", AUTO));
+    changes.push(change("FSR", "UpscalerIndex", "0"));
+  } else if (fsr4 === "int8-lite") {
+    // v10's switches: 4 marks the GPU as FSR 4 capable and limits it to INT8,
+    // 3 picks the Lite model, and only the Vulkan driver DLL carries it.
+    changes.push(change("FSR", "Fsr4GpuSupport", "4"));
+    changes.push(change("FSR", "Fsr4Model", "3"));
+    changes.push(change("FSR", "UpscalerIndex", "0"));
+  } else if (fsr4 === "off") {
+    // "No override": leave the GPU checks alone, and run FSR 3.1.5 in the
+    // backend where the FSR 4 index is not being asked for.
+    changes.push(change("FSR", "Fsr4GpuSupport", "0"));
+    changes.push(change("FSR", "UpscalerIndex", "1"));
   }
   return {
     id,
@@ -67,14 +71,17 @@ function upscalerPreset(
     changes,
     matches: (values) => {
       if (get(values, "Upscalers", "Dx12Upscaler") !== dx12) return false;
-      if (fsr4Update === undefined) return true;
-      // A preset that writes the override off is not the one in force while it
-      // is on: the INT8 route cannot be described by any other preset's flag.
-      if (int8 === false && get(values, "FSR", "Fsr4ForceEnableInt8") === "true") {
-        return false;
+      if (fsr4 === undefined) return true;
+      if (fsr4 === "auto") {
+        return isAuto(get(values, "FSR", "Fsr4GpuSupport"));
       }
-      const flag = get(values, "FSR", "Fsr4Update");
-      return fsr4Update ? flag === "true" : flag !== "true";
+      if (fsr4 === "int8-lite") {
+        return (
+          get(values, "FSR", "Fsr4GpuSupport") === "4" &&
+          get(values, "FSR", "Fsr4Model") === "3"
+        );
+      }
+      return get(values, "FSR", "Fsr4GpuSupport") === "0";
     },
   };
 }
@@ -88,49 +95,51 @@ export const UPSCALER_PRESETS: Preset[] = [
       change("Upscalers", "Dx12Upscaler", AUTO),
       change("Upscalers", "Dx11Upscaler", AUTO),
       change("Upscalers", "VulkanUpscaler", AUTO),
-      change("FSR", "Fsr4Update", AUTO),
-      change("FSR", "Fsr4ForceEnableInt8", AUTO),
+      change("FSR", "Fsr4GpuSupport", AUTO),
+      change("FSR", "Fsr4Model", AUTO),
       change("FSR", "UpscalerIndex", AUTO),
     ],
     matches: (values) => isAuto(get(values, "Upscalers", "Dx12Upscaler")),
   },
   {
-    // installer._replace_fsr4 owns the atomic DLL/settings write. This list
-    // documents the preset for matching/validation; onEnableFsr4 applies it.
+    // installer.install() writes exactly this preset on every install, so it is
+    // also what this entry has to recognise. Listed here so the panel can show
+    // which preset the folder is on and offer it back.
     id: "fsr4-int8",
-    label: "FSR 4.1.1b — Steam Deck",
-    description: "Downloads the community RDNA2 ghosting fix and enables INT8 upscaling. Close the game first.",
+    label: "FSR 4 Lite — Steam Deck",
+    description:
+      "INT8 Lite model, read from the bundled Vulkan driver DLL (amdvkffx64). "
+      + "Runs on any GPU and needs no download.",
     changes: [
-      change("Upscalers", "Dx12Upscaler", "fsr31"),
-      change("Upscalers", "Dx11Upscaler", "fsr31_12"),
-      change("Upscalers", "VulkanUpscaler", "fsr31_12"),
-      // Fsr4Update is left alone rather than turned on: v0.9.4's release notes
-      // and the maintainer both say not to set it on a GPU AMD does not
-      // officially support, because the upgrade path forces FP8 and OptiScaler
-      // answers with its internal FSR 3 fallback. The INT8 override is the
-      // route that keeps FSR 4 on an RDNA 2 part, and it is what this preset is.
-      change("FSR", "Fsr4Update", AUTO),
-      change("FSR", "Fsr4ForceEnableInt8", "true"),
+      change("Upscalers", "Dx12Upscaler", "ffx"),
+      change("Upscalers", "Dx11Upscaler", "ffx_12"),
+      change("Upscalers", "VulkanUpscaler", "ffx_12"),
+      // v10's own words for this: Fsr4GpuSupport=4 "can enable FSR 4 on
+      // unsupported GPUs or limit it to INT8", and INT8 Lite is the smaller
+      // model meant for APUs. Fsr4Model=3 selects it; that model exists only in
+      // the Vulkan driver DLL, which is why the payload ships amdvkffx64.dll.
+      change("FSR", "Fsr4GpuSupport", "4"),
+      change("FSR", "Fsr4Model", "3"),
       change("FSR", "UpscalerIndex", "0"),
       change("FSR", "Fsr4Preset", AUTO),
     ],
     matches: (values) =>
-      get(values, "Upscalers", "Dx12Upscaler") === "fsr31" &&
-      get(values, "FSR", "Fsr4ForceEnableInt8") === "true" &&
-      get(values, "FSR", "Fsr4Update") !== "true" &&
+      get(values, "Upscalers", "Dx12Upscaler") === "ffx" &&
+      get(values, "FSR", "Fsr4GpuSupport") === "4" &&
+      get(values, "FSR", "Fsr4Model") === "3" &&
       get(values, "FSR", "UpscalerIndex") === "0",
   },
   upscalerPreset(
     "fsr4",
-    "FSR 3.X/4",
+    "FSR 4",
     "OptiScaler's FidelityFX backend with FSR 4 turned on. Needs an RDNA 3 or RDNA 4 GPU.",
-    "fsr31", "fsr31_12", "fsr31_12", true, false
+    "ffx", "ffx_12", "ffx_12", "auto"
   ),
   upscalerPreset(
     "fsr31",
     "FSR 3.X",
     "The same backend running FSR 3.1. Works on any GPU — the safe choice on a Steam Deck.",
-    "fsr31", "fsr31", "fsr31", false, false
+    "ffx", "fsr31", "ffx", "off"
   ),
   upscalerPreset(
     "fsr22",
@@ -259,7 +268,7 @@ export const FFX_UPSCALER_KEY = "UpscalerIndex";
 export const FFX_UPSCALER_ID = `${FFX_UPSCALER_SECTION}.${FFX_UPSCALER_KEY}`;
 
 /** The backend ids that run FidelityFX upscaling, and so have a version. */
-export const FFX_BACKENDS = ["fsr31", "fsr31_12"];
+export const FFX_BACKENDS = ["fsr31", "fsr31_12", "ffx", "ffx_12"];
 
 export function isFfxBackend(code: string | null | undefined): boolean {
   return Boolean(code) && FFX_BACKENDS.includes(String(code).toLowerCase());
@@ -284,9 +293,9 @@ export function isFsr4Version(name: string | null | undefined): boolean {
 /**
  * Whether FSR 4 on this device only runs through the forced INT8 model.
  *
- * `experimental` is RDNA 2, which OptiScaler reaches through `Fsr4ForceEnableInt8`
- * rather than through its own GPU checks; `unsupported` is everything AMD does
- * not cover at all. Both are the devices the release notes warn about below.
+ * `experimental` is RDNA 2, which OptiScaler reaches through the
+ * `Fsr4GpuSupport` override rather than through its own GPU checks;
+ * `unsupported` is everything AMD does not cover at all. Both are the devices the release notes warn about below.
  */
 export function needsForcedInt8(gpu: GpuInfo | null | undefined): boolean {
   return gpu?.fsr4 === "experimental" || gpu?.fsr4 === "unsupported";
@@ -296,11 +305,10 @@ export function needsForcedInt8(gpu: GpuInfo | null | undefined): boolean {
  * Whether the FidelityFX upscaler in the folder is new enough for that override.
  *
  * This is not the same question as the GPU's, and it is the one that changes when
- * somebody swaps in a different build from the FSR 4 panel. OptiScaler's menu
- * offers its FSR 3.X/4 entry off `Fsr4ForceEnableInt8` only when the local
- * upscaler is 4.1.1 or newer (menu_common.cpp), so a 4.0.2 build — the one the
- * OptiScaler Client points RDNA 2 users at — is reached through `Fsr4Update`
- * instead, and the INT8 preset would do nothing at all with it in place.
+ * somebody swaps in a different build from the FSR 4 panel. The INT8 models
+ * need an FSR 4.1.1-or-newer upscaler (menu_common.cpp), so with a 4.0.2 build
+ * in place the INT8 preset would do nothing at all and the plain FSR 4 write is
+ * the one that works.
  *
  * An unreadable version reads as yes: the file in an OptiScaler install is the
  * released 4.1.1 SDK unless somebody changed it, and the alternative is telling
@@ -318,34 +326,29 @@ export function supportsInt8Override(ffx?: { version?: string | null } | null): 
  * Pick a FidelityFX upscaler version, and make it reachable.
  *
  * Asking for FSR 4 is not enough on its own. OptiScaler only reaches it when
- * `fsr4Possible` holds — `Fsr4Update`, or an RDNA 4 GPU, or the INT8 override
- * (menu_common.cpp) — so asking for an FSR 4 version from the FSR 3.X backend
- * would otherwise fall back to FSR 3 with nothing said about it. That is the
- * "(Potential FSR3 fallback)" the overlay prints.
+ * its own GPU checks say the device can run it, or when `Fsr4GpuSupport`
+ * overrides that answer — so asking for an FSR 4 version from the FSR 3.X
+ * backend would otherwise fall back to FSR 3 with nothing said about it. That
+ * is the "(Potential FSR3 fallback)" the overlay prints.
  *
- * `Fsr4Update` is only the right lever where OptiScaler's own GPU checks allow
- * it, which is RDNA 3 and up. Where the INT8 override is what reaches FSR 4, it
- * is the wrong one: v0.9.4's notes say setting it on an unsupported GPU forces
- * FP8 and OptiScaler answers with its internal FSR 3 fallback, and the
- * maintainer said the same thing on the bug tracker, pointing at the override as
- * the option such a device needs. So `int8Route` — the device and the upscaler
- * build together, as `BasicPanel` works it out — turns this write off, and the
- * caller says what to do instead.
- *
- * Note that the build is half of that condition: a 4.0.2 upscaler is below the
- * 4.1.1 the override needs, so on the same device the upgrade path is the one
- * that works and this write is the right answer again.
+ * On a device the driver covers, the right write is to clear the override
+ * ("no override") and leave the model to OptiScaler's detection. Where the INT8
+ * route is what reaches FSR 4 — a Steam Deck is RDNA 2 — the override is the
+ * option such a device needs, and `int8Route` (the device and the upscaler
+ * build together, as `BasicPanel` works it out) turns this write off so the
+ * preset that forces INT8 Lite is not undone.
  *
  * The reverse is deliberately not done: choosing an older version does not turn
- * it off. `Fsr4Update` is the hook that makes FSR 4 *available*, not a request
- * for it, and switching it off would be undoing a setting nobody asked about.
+ * anything off. `Fsr4GpuSupport` is what makes FSR 4 *available*, not a request
+ * for it, and clearing it would be undoing a setting nobody asked about.
  */
 export function ffxUpscalerChanges(
   index: string, version?: string | null, int8Route = false
 ): OptionChange[] {
   const changes = [change(FFX_UPSCALER_SECTION, FFX_UPSCALER_KEY, index)];
   if (isFsr4Version(version) && !int8Route) {
-    changes.push(change("FSR", "Fsr4Update", "true"));
+    changes.push(change("FSR", "Fsr4GpuSupport", AUTO));
+    changes.push(change("FSR", "Fsr4Model", AUTO));
   }
   return changes;
 }
