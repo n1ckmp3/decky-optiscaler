@@ -45,7 +45,7 @@ struct Config
     CustomOptional<uint32_t> DLSSDRenderPresetBalanced;
     CustomOptional<uint32_t> DLSSDRenderPresetPerformance;
     CustomOptional<uint32_t> DLSSDRenderPresetUltraPerformance;
-    CustomOptional<bool> MakeDepthCopy;
+    CustomOptional<bool> NvngxFGMakeDepthCopy;
     CustomOptional<msvc_wstring> MainDllPath;
     CustomOptional<msvc_wstring> FfxDx12Path;
     CustomOptional<msvc_wstring> FfxDx12SRPath;
@@ -61,14 +61,12 @@ struct Config
     CustomOptional<msvc_wstring> NVNGX_DLSS_Library;
     CustomOptional<msvc_wstring> DLSSFeaturePath;
     CustomOptional<msvc_wstring> NvapiDllPath;
+    CustomOptional<int32_t> SharpnessShader;
     CustomOptional<bool> OverrideSharpness;
     CustomOptional<float> Sharpness;
     CustomOptional<bool> RcasEnabled;
     CustomOptional<bool> ContrastEnabled;
     CustomOptional<float> Contrast;
-    CustomOptional<bool> UseDepthAwareSharpen;
-    CustomOptional<bool> UseDASDepthAwareSharpen;
-    CustomOptional<bool> DADepthIsLinear;
     CustomOptional<float> DADepthScale;
     CustomOptional<float> DADepthBias;
     CustomOptional<bool> DAClampOutput;
@@ -77,12 +75,21 @@ struct Config
     CustomOptional<float> MotionSharpness;
     CustomOptional<float> MotionThreshold;
     CustomOptional<float> MotionScaleLimit;
+    CustomOptional<bool> MagnifierEnabled;
+    CustomOptional<float> MagnifierSize;
+    CustomOptional<int32_t> MagnifierZoomFactor;
+    CustomOptional<float> MagnifierBorderSize;
+    CustomOptional<float> MagnifierCursorOffsetX;
+    CustomOptional<float> MagnifierCursorOffsetY;
+    CustomOptional<float> MagnifierStaticPosX;
+    CustomOptional<float> MagnifierStaticPosY;
     CustomOptional<float> MenuScale;
+    CustomOptional<float> MenuHeight;
     CustomOptional<bool> OverlayMenu;
     CustomOptional<int32_t> ShortcutKey;
     CustomOptional<bool> ExtendedLimits;
     CustomOptional<bool> ShowFps;
-    CustomOptional<int32_t> FpsOverlayPos;
+    CustomOptional<uint32_t> FpsOverlayPosition;
     CustomOptional<uint32_t> FpsOverlayType;
     CustomOptional<int32_t> FpsShortcutKey;
     CustomOptional<int32_t> FpsCycleShortcutKey;
@@ -95,6 +102,7 @@ struct Config
     CustomOptional<msvc_wstring> TTFFontPath;
     CustomOptional<int32_t> FGShortcutKey;
     CustomOptional<bool> LightTheme;
+    CustomOptional<bool> OverlaysUseTheme;
     CustomOptional<float> MenuAccentColorR;
     CustomOptional<float> MenuAccentColorG;
     CustomOptional<float> MenuAccentColorB;
@@ -102,6 +110,10 @@ struct Config
     CustomOptional<float> MenuBGColorG;
     CustomOptional<float> MenuBGColorB;
     CustomOptional<float> MenuBGColorA;
+    CustomOptional<bool> MenuBlur;
+    CustomOptional<float> MenuBlurStrength;
+    CustomOptional<bool> CustomTabEnabled;
+    CustomOptional<msvc_string> CustomTabCards;
     CustomOptional<bool> HookOriginalNvngxOnly;
     CustomOptional<bool> EarlyHooking;
     CustomOptional<bool> UseNtdllHooks;
@@ -120,7 +132,6 @@ struct Config
     CustomOptional<msvc_wstring> ProcessExclusionList;
     CustomOptional<bool> CheckForUpdate;
     CustomOptional<bool> DisableOverlays;
-    CustomOptional<bool> ManualInputPolling;
     CustomOptional<bool> SimulateWaitableObject;
     CustomOptional<float> MipmapBiasOverride;
     CustomOptional<bool> MipmapBiasFixedOverride;
@@ -147,9 +158,9 @@ struct Config
     CustomOptional<int32_t> MaskResourceBarrier;
     CustomOptional<int32_t> OutputResourceBarrier;
     CustomOptional<bool> CreateD3D12DeviceForLuma;
-    CustomOptional<msvc_string> Dx11Upscaler;
-    CustomOptional<msvc_string> Dx12Upscaler;
-    CustomOptional<msvc_string> VulkanUpscaler;
+    CustomOptional<int32_t> Dx11Upscaler;
+    CustomOptional<int32_t> Dx12Upscaler;
+    CustomOptional<int32_t> VulkanUpscaler;
     CustomOptional<bool> OutputScalingEnabled;
     CustomOptional<float> OutputScalingMultiplier;
     CustomOptional<uint32_t> OutputScalingDownscaler;
@@ -166,10 +177,9 @@ struct Config
     CustomOptional<float> FsrShadingScale;
     CustomOptional<float> FsrAccAddPerFrame;
     CustomOptional<float> FsrMinDisOccAcc;
-    CustomOptional<bool> Fsr4Update;
-    CustomOptional<bool> Fsr4ForceEnableInt8;
+    CustomOptional<uint8_t> Fsr4GpuSupport;
     CustomOptional<uint32_t> Fsr4Preset;
-    CustomOptional<bool> Fsr4EnableDebugView;
+    CustomOptional<uint8_t> Fsr4Model;
     CustomOptional<bool> Fsr4EnableWatermark;
     CustomOptional<bool> Fsr4DoNotLoadAmdxc64;
     CustomOptional<float> FsrVerticalFov;
@@ -181,9 +191,9 @@ struct Config
     CustomOptional<bool> DontUseNTShared;
     CustomOptional<bool> VulkanUseCopyForInputs;
     CustomOptional<bool> VulkanUseCopyForOutput;
-    CustomOptional<bool> OverrideNvapiDll;
-    CustomOptional<bool> DontUseFakenvapiForXeLLOnNvidia;
     CustomOptional<bool> DisableFlipMetering;
+    CustomOptional<bool> DisableOTA;
+    CustomOptional<bool> ImASillyGooseThatIsAboutToMisuseReflex;
     CustomOptional<bool> DxgiSpoofing;
     CustomOptional<bool> DxgiFactoryWrapping;
     CustomOptional<bool> StreamlineSpoofing;
@@ -206,10 +216,12 @@ struct Config
     CustomOptional<msvc_wstring> PluginPath;
     CustomOptional<bool> LoadSpecialK;
     CustomOptional<bool> LoadReShade;
+    CustomOptional<bool> LoadCustomAmdxc64OnRdna2;
     CustomOptional<bool> LoadAsiPlugins;
     CustomOptional<int32_t> LateAsiPluginsDelay;
     CustomOptional<uint32_t> FGInput;
     CustomOptional<uint32_t> FGOutput;
+    CustomOptional<uint32_t> FGNvngxReplacement;
     CustomOptional<bool> FGDrawUIOverFG;
     CustomOptional<bool> FGUIPremultipliedAlpha;
     CustomOptional<bool> FGDisableHudless;
@@ -224,7 +236,9 @@ struct Config
     CustomOptional<bool> FGSkipResizeBuffers;
     CustomOptional<bool> FGModifyBufferState;
     CustomOptional<bool> FGModifySCIndex;
+    CustomOptional<float> FGHudCutoff;
     CustomOptional<uint32_t> FTInput;
+    CustomOptional<bool> FGReprojectionEnabled;
     CustomOptional<bool> FGEnabled;
     CustomOptional<bool> FGUseMutexForSwapchain;
     CustomOptional<bool> FGMakeMVCopy;
@@ -240,7 +254,10 @@ struct Config
     CustomOptional<bool> FGHUDFix;
     CustomOptional<int32_t> FGHUDLimit;
     CustomOptional<bool> FGHUDFixExtended;
+    CustomOptional<bool> FGHUDFixUITexture;
+    CustomOptional<bool> FGHUDFixUIUnblend;
     CustomOptional<bool> FGImmediateCapture;
+    CustomOptional<bool> FGHudfixPersistentBindings;
     CustomOptional<bool> FGDontUseSwapchainBuffers;
     CustomOptional<bool> FGRelaxedResolutionCheck;
     CustomOptional<bool> FGHudfixDisableRTV;
@@ -273,17 +290,42 @@ struct Config
     CustomOptional<bool> FSRFGEnableWatermark;
     CustomOptional<bool> FGXeFGIgnoreInitChecks;
     CustomOptional<int32_t> FGXeFGInterpolationCount;
+    CustomOptional<bool> FGXeFGDynamicMFG;
+    CustomOptional<float> FGXeFGFramerateTargetDMFG;
+    CustomOptional<int32_t> FGXeFGRoundingDMFG;
+    CustomOptional<bool> FGXeFGDynamicAllow1X;
+    CustomOptional<bool> FGXeFGTargetAsCapDMFG;
+    CustomOptional<int32_t> FGXeFGOverrideInterpolationCount;
     CustomOptional<bool> FGXeFGUIComposition;
     CustomOptional<bool> FGXeFGDepthInverted;
     CustomOptional<bool> FGXeFGJitteredMV;
     CustomOptional<bool> FGXeFGHighResMV;
     CustomOptional<bool> FGXeFGDebugView;
     CustomOptional<bool> FGXeFGForceBorderless;
-    CustomOptional<bool> FN_EnableLogs;
-    CustomOptional<bool> FN_EnableTraceLogs;
+    CustomOptional<int32_t> FGDLSSGInterpolationCount;
+    CustomOptional<bool> FGDLSSGUseGamesReflexMarkers;
+    CustomOptional<int32_t> FGDLSSGOverrideInterpolationCount;
+    CustomOptional<bool> FGDLSSGOverrideForceDMFG;
+    CustomOptional<bool> FGDLSSGForceDMFG;
+    CustomOptional<float> FGDLSSGFramerateTargetDMFG;
+    CustomOptional<uint32_t> ReprojectionFillMode;
+    CustomOptional<float> ReprojectionDepthCutoff;
+    CustomOptional<uint32_t> ReprojectionCutoffExpand;
+    CustomOptional<bool> ReprojectionLateLatch;
+    CustomOptional<bool> ReprojectionDirectionCache;
+    CustomOptional<bool> ReprojectionParallaxAuto;
+    CustomOptional<float> ReprojectionParallaxScale;
+    CustomOptional<bool> ReprojectionThirdPersonDetection;
+    CustomOptional<uint32_t> NvngxFGDispatchFlags;
+    CustomOptional<bool> NvngxFGShowDebug;
+    CustomOptional<bool> NvngxFGDisableHudless;
+    CustomOptional<bool> UseFakenvapi;
+    CustomOptional<bool> ForceXeLL;
     CustomOptional<bool> FN_ForceLatencyFlex;
     CustomOptional<uint32_t> FN_LatencyFlexMode;
     CustomOptional<uint32_t> FN_ForceReflex;
+    CustomOptional<uint32_t> LowLatencyInput;
+    CustomOptional<uint32_t> LowLatencyOutput;
     CustomOptional<bool> EnableDlssInputs;
     CustomOptional<bool> EnableXeSSInputs;
     CustomOptional<bool> UseFsr2Inputs;
@@ -304,6 +346,7 @@ struct Config
     CustomOptional<bool> OverrideVsync;
     CustomOptional<bool> ForceVsync;
     CustomOptional<uint32_t> VsyncInterval;
+    CustomOptional<bool> _DONTUSE_Fsr4ForceEnableInt8;
     msvc_path absoluteFileName;
     msvc_wstring fileName;
 };
@@ -348,7 +391,7 @@ struct Config
     X(DLSSDRenderPresetBalanced, uint32_t, OPTI_U32) \
     X(DLSSDRenderPresetPerformance, uint32_t, OPTI_U32) \
     X(DLSSDRenderPresetUltraPerformance, uint32_t, OPTI_U32) \
-    X(MakeDepthCopy, bool, OPTI_BOOL) \
+    X(NvngxFGMakeDepthCopy, bool, OPTI_BOOL) \
     X(MainDllPath, msvc_wstring, OPTI_WSTR) \
     X(FfxDx12Path, msvc_wstring, OPTI_WSTR) \
     X(FfxDx12SRPath, msvc_wstring, OPTI_WSTR) \
@@ -364,14 +407,12 @@ struct Config
     X(NVNGX_DLSS_Library, msvc_wstring, OPTI_WSTR) \
     X(DLSSFeaturePath, msvc_wstring, OPTI_WSTR) \
     X(NvapiDllPath, msvc_wstring, OPTI_WSTR) \
+    X(SharpnessShader, int32_t, OPTI_I32) \
     X(OverrideSharpness, bool, OPTI_BOOL) \
     X(Sharpness, float, OPTI_FLOAT) \
     X(RcasEnabled, bool, OPTI_BOOL) \
     X(ContrastEnabled, bool, OPTI_BOOL) \
     X(Contrast, float, OPTI_FLOAT) \
-    X(UseDepthAwareSharpen, bool, OPTI_BOOL) \
-    X(UseDASDepthAwareSharpen, bool, OPTI_BOOL) \
-    X(DADepthIsLinear, bool, OPTI_BOOL) \
     X(DADepthScale, float, OPTI_FLOAT) \
     X(DADepthBias, float, OPTI_FLOAT) \
     X(DAClampOutput, bool, OPTI_BOOL) \
@@ -380,12 +421,21 @@ struct Config
     X(MotionSharpness, float, OPTI_FLOAT) \
     X(MotionThreshold, float, OPTI_FLOAT) \
     X(MotionScaleLimit, float, OPTI_FLOAT) \
+    X(MagnifierEnabled, bool, OPTI_BOOL) \
+    X(MagnifierSize, float, OPTI_FLOAT) \
+    X(MagnifierZoomFactor, int32_t, OPTI_I32) \
+    X(MagnifierBorderSize, float, OPTI_FLOAT) \
+    X(MagnifierCursorOffsetX, float, OPTI_FLOAT) \
+    X(MagnifierCursorOffsetY, float, OPTI_FLOAT) \
+    X(MagnifierStaticPosX, float, OPTI_FLOAT) \
+    X(MagnifierStaticPosY, float, OPTI_FLOAT) \
     X(MenuScale, float, OPTI_FLOAT) \
+    X(MenuHeight, float, OPTI_FLOAT) \
     X(OverlayMenu, bool, OPTI_BOOL) \
     X(ShortcutKey, int32_t, OPTI_I32) \
     X(ExtendedLimits, bool, OPTI_BOOL) \
     X(ShowFps, bool, OPTI_BOOL) \
-    X(FpsOverlayPos, int32_t, OPTI_I32) \
+    X(FpsOverlayPosition, uint32_t, OPTI_U32) \
     X(FpsOverlayType, uint32_t, OPTI_U32) \
     X(FpsShortcutKey, int32_t, OPTI_I32) \
     X(FpsCycleShortcutKey, int32_t, OPTI_I32) \
@@ -398,6 +448,7 @@ struct Config
     X(TTFFontPath, msvc_wstring, OPTI_WSTR) \
     X(FGShortcutKey, int32_t, OPTI_I32) \
     X(LightTheme, bool, OPTI_BOOL) \
+    X(OverlaysUseTheme, bool, OPTI_BOOL) \
     X(MenuAccentColorR, float, OPTI_FLOAT) \
     X(MenuAccentColorG, float, OPTI_FLOAT) \
     X(MenuAccentColorB, float, OPTI_FLOAT) \
@@ -405,6 +456,10 @@ struct Config
     X(MenuBGColorG, float, OPTI_FLOAT) \
     X(MenuBGColorB, float, OPTI_FLOAT) \
     X(MenuBGColorA, float, OPTI_FLOAT) \
+    X(MenuBlur, bool, OPTI_BOOL) \
+    X(MenuBlurStrength, float, OPTI_FLOAT) \
+    X(CustomTabEnabled, bool, OPTI_BOOL) \
+    X(CustomTabCards, msvc_string, OPTI_STR) \
     X(HookOriginalNvngxOnly, bool, OPTI_BOOL) \
     X(EarlyHooking, bool, OPTI_BOOL) \
     X(UseNtdllHooks, bool, OPTI_BOOL) \
@@ -423,7 +478,6 @@ struct Config
     X(ProcessExclusionList, msvc_wstring, OPTI_WSTR) \
     X(CheckForUpdate, bool, OPTI_BOOL) \
     X(DisableOverlays, bool, OPTI_BOOL) \
-    X(ManualInputPolling, bool, OPTI_BOOL) \
     X(SimulateWaitableObject, bool, OPTI_BOOL) \
     X(MipmapBiasOverride, float, OPTI_FLOAT) \
     X(MipmapBiasFixedOverride, bool, OPTI_BOOL) \
@@ -450,9 +504,9 @@ struct Config
     X(MaskResourceBarrier, int32_t, OPTI_I32) \
     X(OutputResourceBarrier, int32_t, OPTI_I32) \
     X(CreateD3D12DeviceForLuma, bool, OPTI_BOOL) \
-    X(Dx11Upscaler, msvc_string, OPTI_STR) \
-    X(Dx12Upscaler, msvc_string, OPTI_STR) \
-    X(VulkanUpscaler, msvc_string, OPTI_STR) \
+    X(Dx11Upscaler, int32_t, OPTI_I32) \
+    X(Dx12Upscaler, int32_t, OPTI_I32) \
+    X(VulkanUpscaler, int32_t, OPTI_I32) \
     X(OutputScalingEnabled, bool, OPTI_BOOL) \
     X(OutputScalingMultiplier, float, OPTI_FLOAT) \
     X(OutputScalingDownscaler, uint32_t, OPTI_U32) \
@@ -469,10 +523,9 @@ struct Config
     X(FsrShadingScale, float, OPTI_FLOAT) \
     X(FsrAccAddPerFrame, float, OPTI_FLOAT) \
     X(FsrMinDisOccAcc, float, OPTI_FLOAT) \
-    X(Fsr4Update, bool, OPTI_BOOL) \
-    X(Fsr4ForceEnableInt8, bool, OPTI_BOOL) \
+    X(Fsr4GpuSupport, uint8_t, OPTI_U8) \
     X(Fsr4Preset, uint32_t, OPTI_U32) \
-    X(Fsr4EnableDebugView, bool, OPTI_BOOL) \
+    X(Fsr4Model, uint8_t, OPTI_U8) \
     X(Fsr4EnableWatermark, bool, OPTI_BOOL) \
     X(Fsr4DoNotLoadAmdxc64, bool, OPTI_BOOL) \
     X(FsrVerticalFov, float, OPTI_FLOAT) \
@@ -484,9 +537,9 @@ struct Config
     X(DontUseNTShared, bool, OPTI_BOOL) \
     X(VulkanUseCopyForInputs, bool, OPTI_BOOL) \
     X(VulkanUseCopyForOutput, bool, OPTI_BOOL) \
-    X(OverrideNvapiDll, bool, OPTI_BOOL) \
-    X(DontUseFakenvapiForXeLLOnNvidia, bool, OPTI_BOOL) \
     X(DisableFlipMetering, bool, OPTI_BOOL) \
+    X(DisableOTA, bool, OPTI_BOOL) \
+    X(ImASillyGooseThatIsAboutToMisuseReflex, bool, OPTI_BOOL) \
     X(DxgiSpoofing, bool, OPTI_BOOL) \
     X(DxgiFactoryWrapping, bool, OPTI_BOOL) \
     X(StreamlineSpoofing, bool, OPTI_BOOL) \
@@ -509,10 +562,12 @@ struct Config
     X(PluginPath, msvc_wstring, OPTI_WSTR) \
     X(LoadSpecialK, bool, OPTI_BOOL) \
     X(LoadReShade, bool, OPTI_BOOL) \
+    X(LoadCustomAmdxc64OnRdna2, bool, OPTI_BOOL) \
     X(LoadAsiPlugins, bool, OPTI_BOOL) \
     X(LateAsiPluginsDelay, int32_t, OPTI_I32) \
     X(FGInput, uint32_t, OPTI_U32) \
     X(FGOutput, uint32_t, OPTI_U32) \
+    X(FGNvngxReplacement, uint32_t, OPTI_U32) \
     X(FGDrawUIOverFG, bool, OPTI_BOOL) \
     X(FGUIPremultipliedAlpha, bool, OPTI_BOOL) \
     X(FGDisableHudless, bool, OPTI_BOOL) \
@@ -527,7 +582,9 @@ struct Config
     X(FGSkipResizeBuffers, bool, OPTI_BOOL) \
     X(FGModifyBufferState, bool, OPTI_BOOL) \
     X(FGModifySCIndex, bool, OPTI_BOOL) \
+    X(FGHudCutoff, float, OPTI_FLOAT) \
     X(FTInput, uint32_t, OPTI_U32) \
+    X(FGReprojectionEnabled, bool, OPTI_BOOL) \
     X(FGEnabled, bool, OPTI_BOOL) \
     X(FGUseMutexForSwapchain, bool, OPTI_BOOL) \
     X(FGMakeMVCopy, bool, OPTI_BOOL) \
@@ -543,7 +600,10 @@ struct Config
     X(FGHUDFix, bool, OPTI_BOOL) \
     X(FGHUDLimit, int32_t, OPTI_I32) \
     X(FGHUDFixExtended, bool, OPTI_BOOL) \
+    X(FGHUDFixUITexture, bool, OPTI_BOOL) \
+    X(FGHUDFixUIUnblend, bool, OPTI_BOOL) \
     X(FGImmediateCapture, bool, OPTI_BOOL) \
+    X(FGHudfixPersistentBindings, bool, OPTI_BOOL) \
     X(FGDontUseSwapchainBuffers, bool, OPTI_BOOL) \
     X(FGRelaxedResolutionCheck, bool, OPTI_BOOL) \
     X(FGHudfixDisableRTV, bool, OPTI_BOOL) \
@@ -576,17 +636,42 @@ struct Config
     X(FSRFGEnableWatermark, bool, OPTI_BOOL) \
     X(FGXeFGIgnoreInitChecks, bool, OPTI_BOOL) \
     X(FGXeFGInterpolationCount, int32_t, OPTI_I32) \
+    X(FGXeFGDynamicMFG, bool, OPTI_BOOL) \
+    X(FGXeFGFramerateTargetDMFG, float, OPTI_FLOAT) \
+    X(FGXeFGRoundingDMFG, int32_t, OPTI_I32) \
+    X(FGXeFGDynamicAllow1X, bool, OPTI_BOOL) \
+    X(FGXeFGTargetAsCapDMFG, bool, OPTI_BOOL) \
+    X(FGXeFGOverrideInterpolationCount, int32_t, OPTI_I32) \
     X(FGXeFGUIComposition, bool, OPTI_BOOL) \
     X(FGXeFGDepthInverted, bool, OPTI_BOOL) \
     X(FGXeFGJitteredMV, bool, OPTI_BOOL) \
     X(FGXeFGHighResMV, bool, OPTI_BOOL) \
     X(FGXeFGDebugView, bool, OPTI_BOOL) \
     X(FGXeFGForceBorderless, bool, OPTI_BOOL) \
-    X(FN_EnableLogs, bool, OPTI_BOOL) \
-    X(FN_EnableTraceLogs, bool, OPTI_BOOL) \
+    X(FGDLSSGInterpolationCount, int32_t, OPTI_I32) \
+    X(FGDLSSGUseGamesReflexMarkers, bool, OPTI_BOOL) \
+    X(FGDLSSGOverrideInterpolationCount, int32_t, OPTI_I32) \
+    X(FGDLSSGOverrideForceDMFG, bool, OPTI_BOOL) \
+    X(FGDLSSGForceDMFG, bool, OPTI_BOOL) \
+    X(FGDLSSGFramerateTargetDMFG, float, OPTI_FLOAT) \
+    X(ReprojectionFillMode, uint32_t, OPTI_U32) \
+    X(ReprojectionDepthCutoff, float, OPTI_FLOAT) \
+    X(ReprojectionCutoffExpand, uint32_t, OPTI_U32) \
+    X(ReprojectionLateLatch, bool, OPTI_BOOL) \
+    X(ReprojectionDirectionCache, bool, OPTI_BOOL) \
+    X(ReprojectionParallaxAuto, bool, OPTI_BOOL) \
+    X(ReprojectionParallaxScale, float, OPTI_FLOAT) \
+    X(ReprojectionThirdPersonDetection, bool, OPTI_BOOL) \
+    X(NvngxFGDispatchFlags, uint32_t, OPTI_U32) \
+    X(NvngxFGShowDebug, bool, OPTI_BOOL) \
+    X(NvngxFGDisableHudless, bool, OPTI_BOOL) \
+    X(UseFakenvapi, bool, OPTI_BOOL) \
+    X(ForceXeLL, bool, OPTI_BOOL) \
     X(FN_ForceLatencyFlex, bool, OPTI_BOOL) \
     X(FN_LatencyFlexMode, uint32_t, OPTI_U32) \
     X(FN_ForceReflex, uint32_t, OPTI_U32) \
+    X(LowLatencyInput, uint32_t, OPTI_U32) \
+    X(LowLatencyOutput, uint32_t, OPTI_U32) \
     X(EnableDlssInputs, bool, OPTI_BOOL) \
     X(EnableXeSSInputs, bool, OPTI_BOOL) \
     X(UseFsr2Inputs, bool, OPTI_BOOL) \
@@ -607,6 +692,7 @@ struct Config
     X(OverrideVsync, bool, OPTI_BOOL) \
     X(ForceVsync, bool, OPTI_BOOL) \
     X(VsyncInterval, uint32_t, OPTI_U32) \
+    X(_DONTUSE_Fsr4ForceEnableInt8, bool, OPTI_BOOL) \
     /* end */
 
 } // namespace optimirror

@@ -5,12 +5,11 @@
 #include "Util.h"
 
 #include "nvapi/fakenvapi.h"
-#include <hooks/Streamline_Hooks.h>
+#include <misc/IdentifyGpu.h>
 
 #include <SimpleIni.h>
 
 static CSimpleIniA ini;
-static CSimpleIniA fakenvapiIni;
 
 static inline int64_t GetTicks()
 {
@@ -58,9 +57,11 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         // Upscalers
         {
-            Dx11Upscaler.set_from_config(readString("Upscalers", "Dx11Upscaler", true));
-            Dx12Upscaler.set_from_config(readString("Upscalers", "Dx12Upscaler", true));
-            VulkanUpscaler.set_from_config(readString("Upscalers", "VulkanUpscaler", true));
+            // transform converts only when optional has a value
+            Dx11Upscaler.set_from_config(readString("Upscalers", "Dx11Upscaler", true).transform(CodeToUpscaler));
+            Dx12Upscaler.set_from_config(readString("Upscalers", "Dx12Upscaler", true).transform(CodeToUpscalerFfx));
+            VulkanUpscaler.set_from_config(
+                readString("Upscalers", "VulkanUpscaler", true).transform(CodeToUpscalerFfx));
         }
 
         // Frame Generation
@@ -68,39 +69,34 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGEnabled.set_from_config(readBool("FrameGen", "Enabled"));
             FGDebugView.set_from_config(readBool("FrameGen", "DebugView"));
 
-            if (auto FGInputString = readString("FrameGen", "FGInput"); FGInputString.has_value())
+            FGInput.set_from_config(readString("FrameGen", "FGInput").transform(CodeToEnum<enum FGInput>));
+            FGOutput.set_from_config(readString("FrameGen", "FGOutput").transform(CodeToEnum<enum FGOutput>));
+
+            const bool canUseNvngxReplacement =
+                FGInput.value_or_default() == FGInput::NvngxFG || FGOutput.value_or_default() == FGOutput::DLSSG;
+
+            if (auto FGNvngxReplacementString = readString("FrameGen", "FGNvngxReplacement");
+                canUseNvngxReplacement && FGNvngxReplacementString.has_value())
             {
-                if (lstrcmpiA(FGInputString.value().c_str(), "nofg") == 0)
-                    FGInput.set_from_config(FGInput::NoFG);
-                else if (lstrcmpiA(FGInputString.value().c_str(), "upscaler") == 0)
-                    FGInput.set_from_config(FGInput::Upscaler);
-                else if (lstrcmpiA(FGInputString.value().c_str(), "nukems") == 0)
-                {
-                    FGInput.set_from_config(FGInput::Nukems);
-                    FGOutput.set_from_config(FGOutput::Nukems);
-                }
-                else if (lstrcmpiA(FGInputString.value().c_str(), "dlssg") == 0)
-                    FGInput.set_from_config(FGInput::DLSSG);
-                else if (lstrcmpiA(FGInputString.value().c_str(), "fsrfg") == 0)
-                    FGInput.set_from_config(FGInput::FSRFG);
-                else if (lstrcmpiA(FGInputString.value().c_str(), "fsrfg30") == 0)
-                    FGInput.set_from_config(FGInput::FSRFG30);
+                if (lstrcmpiA(FGNvngxReplacementString.value().c_str(), "none") == 0)
+                    FGNvngxReplacement.set_from_config(FGNvngxReplacement::None);
+                else if (lstrcmpiA(FGNvngxReplacementString.value().c_str(), "nukems") == 0)
+                    FGNvngxReplacement.set_from_config(FGNvngxReplacement::Nukems);
+                else if (lstrcmpiA(FGNvngxReplacementString.value().c_str(), "arturs") == 0)
+                    FGNvngxReplacement.set_from_config(FGNvngxReplacement::Arturs);
+                else if (lstrcmpiA(FGNvngxReplacementString.value().c_str(), "ffx") == 0)
+                    FGNvngxReplacement.set_from_config(FGNvngxReplacement::FFX);
+                else if (lstrcmpiA(FGNvngxReplacementString.value().c_str(), "combo") == 0)
+                    FGNvngxReplacement.set_from_config(FGNvngxReplacement::Combo);
             }
 
-            if (auto FGOutputString = readString("FrameGen", "FGOutput");
-                FGInput.value_or_default() != FGInput::Nukems && FGOutputString.has_value())
+            if (auto forceXell = readBool("fakenvapi", "ForceXeLL"); forceXell.has_value() && forceXell.value())
             {
-                if (lstrcmpiA(FGOutputString.value().c_str(), "nofg") == 0)
-                    FGOutput.set_from_config(FGOutput::NoFG);
-                else if (lstrcmpiA(FGOutputString.value().c_str(), "fsrfg") == 0)
-                    FGOutput.set_from_config(FGOutput::FSRFG);
-                else if (lstrcmpiA(FGOutputString.value().c_str(), "nukems") == 0)
-                    FGOutput.set_from_config(FGOutput::Nukems);
-                else if (lstrcmpiA(FGOutputString.value().c_str(), "xefg") == 0)
-                    FGOutput.set_from_config(FGOutput::XeFG);
+                FGInput.set_volatile_value(FGInput::ForceXeLL);
+                FGOutput.set_volatile_value(FGOutput::XeFG);
             }
 
-            auto ftInput = readInt("FrameGen", "FTSource");
+            auto ftInput = readInt("FrameGen", "FTInput");
             if (ftInput.has_value() && ftInput.value() >= 0 &&
                 ftInput.value() <= (FGOutput.value_or_default() == FGOutput::XeFG ? 2 : 1))
             {
@@ -129,6 +125,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGSkipResizeBuffers.set_from_config(readBool("FrameGen", "SkipResizeBuffers"));
             FGModifyBufferState.set_from_config(readBool("FrameGen", "ModifyBufferState"));
             FGModifySCIndex.set_from_config(readBool("FrameGen", "ModifySCIndex"));
+            FGHudCutoff.set_from_config(readFloat("FrameGen", "HudCutoff"));
         }
 
         // FSR FG
@@ -153,7 +150,10 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGHUDFix.set_from_config(readBool("OptiFG", "HUDFix"));
             FGHUDLimit.set_from_config(readInt("OptiFG", "HUDLimit"));
             FGHUDFixExtended.set_from_config(readBool("OptiFG", "HUDFixExtended"));
+            FGHUDFixUITexture.set_from_config(readBool("OptiFG", "HUDFixUITexture"));
+            FGHUDFixUIUnblend.set_from_config(readBool("OptiFG", "HUDFixUIUnblend"));
             FGImmediateCapture.set_from_config(readBool("OptiFG", "HUDFixImmediate"));
+            FGHudfixPersistentBindings.set_from_config(readBool("OptiFG", "HUDFixPersistentBindings"));
             FGUseShards.set_from_config(readBool("OptiFG", "UseShards"));
             FGAlwaysTrackHeaps.set_from_config(readBool("OptiFG", "AlwaysTrackHeaps"));
             FGResourceBlocking.set_from_config(readBool("OptiFG", "ResourceBlocking"));
@@ -183,9 +183,25 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         {
             FGXeFGInterpolationCount.set_from_config(readInt("XeFG", "InterpolationCount"));
-            if (FGXeFGInterpolationCount.has_value() &&
-                (FGXeFGInterpolationCount.value() < 1 || FGXeFGInterpolationCount.value() > 3))
+            if (FGXeFGInterpolationCount.has_value() && FGXeFGInterpolationCount.value() < 1)
                 FGXeFGInterpolationCount.reset();
+
+            FGXeFGDynamicMFG.set_from_config(readBool("XeFG", "DynamicMFG"));
+            FGXeFGFramerateTargetDMFG.set_from_config(readFloat("XeFG", "FramerateTargetDMFG"));
+            if (FGXeFGFramerateTargetDMFG.has_value() && FGXeFGFramerateTargetDMFG.value() < 10.0f)
+                FGXeFGFramerateTargetDMFG.reset();
+
+            FGXeFGRoundingDMFG.set_from_config(readInt("XeFG", "RoundingDMFG"));
+            if (FGXeFGRoundingDMFG.has_value() && (FGXeFGRoundingDMFG.value() < 0 || FGXeFGRoundingDMFG.value() > 2))
+                FGXeFGRoundingDMFG.reset();
+
+            FGXeFGDynamicAllow1X.set_from_config(readBool("XeFG", "DynamicAllow1X"));
+            FGXeFGTargetAsCapDMFG.set_from_config(readBool("XeFG", "TargetAsCapDMFG"));
+
+            FGXeFGOverrideInterpolationCount.set_from_config(readInt("XeFG", "OverrideInterpolationCount"));
+            if (FGXeFGOverrideInterpolationCount.has_value() &&
+                (FGXeFGOverrideInterpolationCount.value() < 0 || FGXeFGOverrideInterpolationCount.value() > 5))
+                FGXeFGOverrideInterpolationCount.reset();
 
             FGXeFGIgnoreInitChecks.set_from_config(readBool("XeFG", "IgnoreInitChecks"));
             FGXeFGUIComposition.set_from_config(readBool("XeFG", "UIComposition"));
@@ -194,6 +210,37 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGXeFGHighResMV.set_from_config(readBool("XeFG", "HighResMV"));
             FGXeFGDebugView.set_from_config(readBool("XeFG", "DebugView"));
             FGXeFGForceBorderless.set_from_config(readBool("XeFG", "ForceBorderless"));
+        }
+
+        {
+            FGDLSSGInterpolationCount.set_from_config(readInt("DLSSG", "InterpolationCount"));
+            if (FGDLSSGInterpolationCount.has_value() &&
+                (FGDLSSGInterpolationCount.value() < 1 || FGDLSSGInterpolationCount.value() > 6))
+                FGDLSSGInterpolationCount.reset();
+
+            FGDLSSGUseGamesReflexMarkers.set_from_config(readBool("DLSSG", "UseGamesReflexMarkers"));
+
+            FGDLSSGOverrideInterpolationCount.set_from_config(readInt("DLSSG", "OverrideInterpolationCount"));
+            if (FGDLSSGOverrideInterpolationCount.has_value() &&
+                (FGDLSSGOverrideInterpolationCount.value() < 0 || FGDLSSGOverrideInterpolationCount.value() > 6))
+                FGDLSSGOverrideInterpolationCount.reset();
+
+            FGDLSSGFramerateTargetDMFG.set_from_config(readFloat("DLSSG", "FramerateTargetDMFG"));
+            FGDLSSGOverrideForceDMFG.set_from_config(readBool("DLSSG", "OverrideForceDMFG"));
+            FGDLSSGForceDMFG.set_from_config(readBool("DLSSG", "ForceDMFG"));
+        }
+
+        {
+            ReprojectionFillMode.set_from_config(
+                readString("Reprojection", "FillMode", true).transform(CodeToEnum<ReprojectionFill>));
+
+            ReprojectionDepthCutoff.set_from_config(readFloat("Reprojection", "DepthCutoff"));
+            ReprojectionCutoffExpand.set_from_config(readUInt("Reprojection", "CutoffExpand"));
+            ReprojectionLateLatch.set_from_config(readBool("Reprojection", "LateLatch"));
+            ReprojectionDirectionCache.set_from_config(readBool("Reprojection", "DirectionCache"));
+            ReprojectionParallaxAuto.set_from_config(readBool("Reprojection", "ParallaxAuto"));
+            ReprojectionParallaxScale.set_from_config(readFloat("Reprojection", "ParallaxScale"));
+            ReprojectionThirdPersonDetection.set_from_config(readBool("Reprojection", "ThirdPersonDetection"));
         }
 
         // FSR FG Inputs
@@ -228,14 +275,19 @@ bool Config::Reload(std::filesystem::path iniPath)
             FfxFGIndex.set_from_config(readInt("FSR", "FGIndex"));
             FsrUseMaskForTransparency.set_from_config(readBool("FSR", "UseReactiveMaskForTransparency"));
             DlssReactiveMaskBias.set_from_config(readFloat("FSR", "DlssReactiveMaskBias"));
-            Fsr4Update.set_from_config(readBool("FSR", "Fsr4Update"));
-            Fsr4ForceEnableInt8.set_from_config(readBool("FSR", "Fsr4ForceEnableInt8"));
-            Fsr4EnableDebugView.set_from_config(readBool("FSR", "Fsr4EnableDebugView"));
+
+            if (auto v = readEnum<FSR4Support>("FSR", "Fsr4GpuSupport"))
+                Fsr4GpuSupport.set_from_config(*v);
+            else
+                Fsr4GpuSupport.reset();
+
             Fsr4EnableWatermark.set_from_config(readBool("FSR", "Fsr4EnableWatermark"));
             Fsr4DoNotLoadAmdxc64.set_from_config(readBool("FSR", "Fsr4DoNotLoadAmdxc64"));
 
             if (auto setting = readInt("FSR", "Fsr4Preset"); setting.has_value() && setting >= 0 && setting <= 5)
                 Fsr4Preset.set_from_config(setting);
+
+            Fsr4Model.set_from_config(readEnum<FSR4Model>("FSR", "Fsr4Model"));
 
             FsrNonLinearColorSpace.set_from_config(readBool("FSR", "FsrNonLinearColorSpace"));
             FsrNonLinearPQ.set_from_config(readBool("FSR", "FsrNonLinearPQ"));
@@ -248,7 +300,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             else if (FsrNonLinearSRGB.has_value() && FsrNonLinearSRGB.value())
                 FsrNonLinearPQ.reset();
 
-            if (FsrNonLinearPQ.has_value() || FsrNonLinearPQ.has_value())
+            if (FsrNonLinearPQ.has_value() || FsrNonLinearSRGB.has_value())
                 FsrNonLinearColorSpace.set_volatile_value(true);
         }
 
@@ -270,31 +322,31 @@ bool Config::Reload(std::filesystem::path iniPath)
             constexpr size_t presetCount = 17;
 
             if (auto setting = readInt("DLSS", "RenderPresetForAll");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetForAll.set_from_config(setting);
 
             if (auto setting = readInt("DLSS", "RenderPresetDLAA");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetDLAA.set_from_config(setting);
 
             if (auto setting = readInt("DLSS", "RenderPresetUltraQuality");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetUltraQuality.set_from_config(setting);
 
             if (auto setting = readInt("DLSS", "RenderPresetQuality");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetQuality.set_from_config(setting);
 
             if (auto setting = readInt("DLSS", "RenderPresetBalanced");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetBalanced.set_from_config(setting);
 
             if (auto setting = readInt("DLSS", "RenderPresetPerformance");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetPerformance.set_from_config(setting);
 
             if (auto setting = readInt("DLSS", "RenderPresetUltraPerformance");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 RenderPresetUltraPerformance.set_from_config(setting);
         }
         // DLSSD
@@ -302,48 +354,55 @@ bool Config::Reload(std::filesystem::path iniPath)
             // Don't enable again if set false because of no nvngx found
             DLSSDRenderPresetOverride.set_from_config(readBool("DLSSD", "RenderPresetOverride"));
 
-            constexpr size_t presetCount = 6;
+            constexpr size_t presetCount = 7;
 
             if (auto setting = readInt("DLSSD", "RenderPresetForAll");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetForAll.set_from_config(setting);
 
             if (auto setting = readInt("DLSSD", "RenderPresetDLAA");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetDLAA.set_from_config(setting);
 
             if (auto setting = readInt("DLSSD", "RenderPresetUltraQuality");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetUltraQuality.set_from_config(setting);
 
             if (auto setting = readInt("DLSSD", "RenderPresetQuality");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetQuality.set_from_config(setting);
 
             if (auto setting = readInt("DLSSD", "RenderPresetBalanced");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetBalanced.set_from_config(setting);
 
             if (auto setting = readInt("DLSSD", "RenderPresetPerformance");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetPerformance.set_from_config(setting);
 
             if (auto setting = readInt("DLSSD", "RenderPresetUltraPerformance");
-                setting.has_value() && setting >= 0 && (setting < presetCount || setting == 0x00FFFFFF))
+                setting.has_value() && setting >= 0 && (setting < presetCount || setting == NV_PRESET_LATEST))
                 DLSSDRenderPresetUltraPerformance.set_from_config(setting);
         }
 
-        // Nukems
+        // NvngxFG
         {
-            MakeDepthCopy.set_from_config(readBool("Nukems", "MakeDepthCopy"));
+            if (auto setting = readBool("Nukems", "MakeDepthCopy"); setting.has_value() && setting.value())
+                NvngxFGMakeDepthCopy.set_from_config(setting); // For compat with older config
+            else
+                NvngxFGMakeDepthCopy.set_from_config(readBool("NvngxFG", "MakeDepthCopy"));
+
+            NvngxFGDispatchFlags.set_from_config(readUInt("NvngxFG", "DispatchFlags"));
+            NvngxFGShowDebug.set_from_config(readBool("NvngxFG", "ShowDebug"));
+            NvngxFGDisableHudless.set_from_config(readBool("NvngxFG", "DisableHudless"));
         }
 
         // Logging
         {
+            LogToFile.set_from_config(readBool("Log", "LogToFile"));
             LogLevel.set_from_config(readInt("Log", "LogLevel"));
             LogToConsole.set_from_config(readBool("Log", "LogToConsole"));
             LogToDebug.set_from_config(readBool("Log", "LogToDebug"));
-            LogToFile.set_from_config(readBool("Log", "LogToFile"));
             LogToNGX.set_from_config(readBool("Log", "LogToNGX"));
             OpenConsole.set_from_config(readBool("Log", "OpenConsole"));
             DebugWait.set_from_config(readBool("Log", "DebugWait"));
@@ -384,6 +443,8 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         // Sharpness
         {
+            SharpnessShader.set_from_config(
+                readString("Sharpness", "Shader", true).transform(CodeToEnum<SharpenShader>));
             OverrideSharpness.set_from_config(readBool("Sharpness", "OverrideSharpness"));
 
             if (auto setting = readFloat("Sharpness", "Sharpness"); setting.has_value())
@@ -395,6 +456,9 @@ bool Config::Reload(std::filesystem::path iniPath)
             if (auto setting = readFloat("Menu", "Scale"); setting.has_value())
                 MenuScale.set_from_config(std::clamp(setting.value(), 0.5f, 2.0f));
 
+            if (auto setting = readFloat("Menu", "Height"); setting.has_value())
+                MenuHeight.set_from_config(std::max(setting.value(), 300.0f));
+
             // Don't enable again if set false because of Linux issue
             OverlayMenu.set_from_config(readBool("Menu", "OverlayMenu"));
             ShortcutKey.set_from_config(readInt("Menu", "ShortcutKey"));
@@ -403,13 +467,15 @@ bool Config::Reload(std::filesystem::path iniPath)
             UseHQFont.set_from_config(readBool("Menu", "UseHQFont"));
             DisableSplash.set_from_config(readBool("Menu", "DisableSplash"));
 
-            if (auto setting = readInt("Menu", "FpsOverlayPos"); setting.has_value())
-                FpsOverlayPos.set_from_config(std::clamp(setting.value(), 0, 3));
+            if (auto setting = readUInt("Menu", "FpsOverlayPos"); setting.has_value())
+            {
+                FpsOverlayPosition.set_from_config(
+                    (FpsOverlayPos) std::clamp(setting.value(), 0U, FpsOverlayPos_COUNT - 1));
+            }
 
             if (auto setting = readUInt("Menu", "FpsOverlayType"); setting.has_value())
             {
-                FpsOverlayType.set_from_config(
-                    (FpsOverlay) std::clamp(setting.value(), (uint32_t) FpsOverlay_JustFPS, FpsOverlay_COUNT - 1));
+                FpsOverlayType.set_from_config((FpsOverlay) std::clamp(setting.value(), 0U, FpsOverlay_COUNT - 1));
             }
 
             FpsShortcutKey.set_from_config(readInt("Menu", "FpsShortcutKey"));
@@ -428,6 +494,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGShortcutKey.set_from_config(readInt("Menu", "FGShortcutKey"));
 
             LightTheme.set_from_config(readBool("Menu", "LightTheme"));
+            OverlaysUseTheme.set_from_config(readBool("Menu", "OverlaysUseTheme"));
             MenuAccentColorR.set_from_config(readFloat("Menu", "AccentColorR"));
             MenuAccentColorG.set_from_config(readFloat("Menu", "AccentColorG"));
             MenuAccentColorB.set_from_config(readFloat("Menu", "AccentColorB"));
@@ -435,6 +502,12 @@ bool Config::Reload(std::filesystem::path iniPath)
             MenuBGColorG.set_from_config(readFloat("Menu", "BGColorG"));
             MenuBGColorB.set_from_config(readFloat("Menu", "BGColorB"));
             MenuBGColorA.set_from_config(readFloat("Menu", "BGColorA"));
+            MenuBlur.set_from_config(readBool("Menu", "Blur"));
+
+            if (auto setting = readFloat("Menu", "BlurStrength"); setting.has_value())
+                MenuBlurStrength.set_from_config(std::clamp(setting.value(), 0.0f, 4.0f));
+            CustomTabEnabled.set_from_config(readBool("Menu", "CustomTabEnabled"));
+            CustomTabCards.set_from_config(readString("Menu", "CustomTabCards"));
         }
 
         // Hooks
@@ -463,9 +536,6 @@ bool Config::Reload(std::filesystem::path iniPath)
             if (auto setting = readFloat("CAS", "Contrast"); setting.has_value())
                 Contrast.set_from_config(std::clamp(setting.value(), -2.0f, 2.0f));
 
-            UseDepthAwareSharpen.set_from_config(readBool("CAS", "UseDepthAwareSharpen"));
-            UseDASDepthAwareSharpen.set_from_config(readBool("CAS", "UseDASDepthAwareSharpen"));
-            DADepthIsLinear.set_from_config(readBool("CAS", "DADepthIsLinear"));
             DADepthScale.set_from_config(readFloat("CAS", "DADepthScale"));
             DADepthBias.set_from_config(readFloat("CAS", "DADepthBias"));
             DAClampOutput.set_from_config(readBool("CAS", "DAClampOutput"));
@@ -473,16 +543,38 @@ bool Config::Reload(std::filesystem::path iniPath)
             MotionSharpnessDebug.set_from_config(readBool("CAS", "SharpenerDebug"));
         }
 
+        // Magnifier
+        {
+            MagnifierEnabled.set_from_config(readBool("Magnifier", "Enabled"));
+
+            if (auto setting = readFloat("Magnifier", "Size"); setting.has_value())
+                MagnifierSize.set_from_config(std::clamp(setting.value(), 0.0f, 100.0f));
+
+            if (auto setting = readInt("Magnifier", "ZoomFactor"); setting.has_value())
+                MagnifierZoomFactor.set_from_config(std::clamp(setting.value(), 2, 20));
+
+            if (auto setting = readFloat("Magnifier", "BorderSize"); setting.has_value())
+                MagnifierBorderSize.set_from_config(std::clamp(setting.value(), 0.0f, 2.0f));
+
+            if (auto setting = readFloat("Magnifier", "CursorOffsetX"); setting.has_value())
+                MagnifierCursorOffsetX.set_from_config(std::clamp(setting.value(), -1000.f, 1000.f));
+            if (auto setting = readFloat("Magnifier", "CursorOffsetY"); setting.has_value())
+                MagnifierCursorOffsetY.set_from_config(std::clamp(setting.value(), -1000.f, 1000.f));
+
+            if (auto setting = readFloat("Magnifier", "StaticPosX"); setting.has_value())
+                MagnifierStaticPosX.set_from_config(std::clamp(setting.value(), 0.0f, 100.0f));
+            if (auto setting = readFloat("Magnifier", "StaticPosY"); setting.has_value())
+                MagnifierStaticPosY.set_from_config(std::clamp(setting.value(), 0.0f, 100.0f));
+        }
+
         // Output Scaling
         {
             OutputScalingEnabled.set_from_config(readBool("OutputScaling", "Enabled"));
-            if (auto setting = readInt("OutputScaling", "Downscaler"); setting.has_value())
-            {
-                if (setting.value() >= 0 && setting.value() < static_cast<int>(Scaler::Count))
-                    OutputScalingDownscaler.set_from_config(static_cast<Scaler>(setting.value()));
-                else
-                    OutputScalingDownscaler.reset();
-            }
+
+            if (auto v = readEnum<Scaler>("OutputScaling", "Downscaler"))
+                OutputScalingDownscaler.set_from_config(*v);
+            else
+                OutputScalingDownscaler.reset();
 
             if (auto setting = readFloat("OutputScaling", "Multiplier"); setting.has_value())
                 OutputScalingMultiplier.set_from_config(std::clamp(setting.value(), 0.5f, 3.0f));
@@ -563,7 +655,6 @@ bool Config::Reload(std::filesystem::path iniPath)
         {
             CheckForUpdate.set_from_config(readBool("Hotfix", "CheckForUpdate"));
             DisableOverlays.set_from_config(readBool("Hotfix", "DisableOverlays"));
-            ManualInputPolling.set_from_config(readBool("Hotfix", "ManualInputPolling"));
 
             SimulateWaitableObject.set_from_config(readBool("Hotfix", "SimulateWaitableObject"));
 
@@ -593,9 +684,10 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         // NvApi
         {
-            OverrideNvapiDll.set_from_config(readBool("NvApi", "OverrideNvapiDll"));
-            DontUseFakenvapiForXeLLOnNvidia.set_from_config(readBool("NvApi", "DontUseFakenvapiForXeLLOnNvidia"));
             DisableFlipMetering.set_from_config(readBool("NvApi", "DisableFlipMetering"));
+            DisableOTA.set_from_config(readBool("NvApi", "DisableOTA"));
+            ImASillyGooseThatIsAboutToMisuseReflex.set_from_config(
+                readBool("NvApi", "ImASillyGooseThatIsAboutToMisuseReflex"));
         }
 
         // Spoofing
@@ -623,9 +715,43 @@ bool Config::Reload(std::filesystem::path iniPath)
             // Enable HAGS when DLSS-G will be used
             if (!SpoofHAGS.has_value())
             {
-                SpoofHAGS.set_volatile_value(FGInput.value_or_default() == FGInput::Nukems ||
+                SpoofHAGS.set_volatile_value(FGInput.value_or_default() == FGInput::NvngxFG ||
                                              FGInput.value_or_default() == FGInput::DLSSG);
             }
+        }
+
+        // fakenvapi
+        {
+            UseFakenvapi.set_from_config(readBool("fakenvapi", "UseFakenvapi"));
+            ForceXeLL.set_from_config(readBool("fakenvapi", "ForceXeLL"));
+            FN_ForceLatencyFlex.set_from_config(readBool("fakenvapi", "ForceLatencyFlex"));
+
+            if (auto v = readEnum<LFXMode>("fakenvapi", "LatencyFlexMode"))
+                FN_LatencyFlexMode.set_from_config(*v);
+            else
+                FN_LatencyFlexMode.reset();
+
+            if (auto v = readEnum<ForceReflex>("fakenvapi", "ForceReflex"))
+                FN_ForceReflex.set_from_config(*v);
+            else
+                FN_ForceReflex.reset();
+
+            // 0 was none, it's the default now
+            if (auto v = readUInt("fakenvapi", "LowLatencyInput");
+                v.has_value() && *v > (uint32_t) ::LowLatencyInput::Auto && *v < (uint32_t) ::LowLatencyInput::_)
+                LowLatencyInput.set_from_config((::LowLatencyInput) *v);
+            else
+                LowLatencyInput.reset();
+
+            if (auto v = readUInt("fakenvapi", "LowLatencyOutput");
+                v.has_value() && *v > (uint32_t) LowLatencyMode::Auto && *v < (uint32_t) LowLatencyMode::_)
+                LowLatencyOutput.set_from_config((LowLatencyMode) *v);
+            else
+                LowLatencyOutput.reset();
+
+            // DMFG is a mess with our reflex implementations, disable by default
+            if (FGDLSSGOverrideForceDMFG.value_or_default() && !FN_ForceReflex.has_value())
+                FN_ForceReflex.set_volatile_value(ForceReflex::ForceDisable);
         }
 
         // Inputs
@@ -653,6 +779,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             PluginPath.set_from_config(readWString("Plugins", "Path"));
             LoadSpecialK.set_from_config(readBool("Plugins", "LoadSpecialK"));
             LoadReShade.set_from_config(readBool("Plugins", "LoadReShade"));
+            LoadCustomAmdxc64OnRdna2.set_from_config(readBool("Plugins", "LoadCustomAmdxc64OnRdna2"));
             LoadAsiPlugins.set_from_config(readBool("Plugins", "LoadAsiPlugins"));
             LateAsiPluginsDelay.set_from_config(readInt("Plugins", "LateAsiPluginsDelay"));
         }
@@ -693,8 +820,17 @@ bool Config::Reload(std::filesystem::path iniPath)
             XeSSDx11Library.set_from_config(readWString("Libraries", "XeSSDx11Path"));
         }
 
-        if (fakenvapi::isUsingFakenvapi())
-            return ReloadFakenvapi();
+        // Reading old configs for compatibility reasons
+        {
+            _DONTUSE_Fsr4ForceEnableInt8.set_from_config(readBool("FSR", "Fsr4ForceEnableInt8"));
+
+            // Named Fsr4ForceModel in older nightlies
+            if (!Fsr4GpuSupport.has_value())
+            {
+                if (auto v = readEnum<FSR4Support>("FSR", "Fsr4ForceModel"))
+                    Fsr4GpuSupport.set_from_config(*v);
+            }
+        }
 
         return true;
     }
@@ -724,23 +860,28 @@ std::string GetBoolValue(std::optional<bool> value)
     return value.value() ? "true" : "false";
 }
 
-std::string GetIntValue(std::optional<int> value, bool getHex = false)
+template <typename T> std::string GetIntValue(std::optional<T> value, bool getHex = false)
 {
     if (!value.has_value())
         return "auto";
 
-    if (getHex)
-        return std::format("{:#x}", value.value());
+    if constexpr (std::is_enum_v<T>)
+    {
+        using Underlying = std::underlying_type_t<T>;
+        Underlying v = static_cast<Underlying>(value.value());
 
-    return std::to_string(value.value());
-}
+        if (getHex)
+            return std::format("{:#x}", v);
 
-std::string GetIntValue(std::optional<Scaler> value)
-{
-    if (!value.has_value())
-        return "auto";
+        return std::to_string(v);
+    }
+    else
+    {
+        if (getHex)
+            return std::format("{:#x}", value.value());
 
-    return std::to_string(static_cast<int>(value.value()));
+        return std::to_string(value.value());
+    }
 }
 
 std::string GetFloatValue(std::optional<float> value)
@@ -755,46 +896,49 @@ bool Config::SaveIni()
 {
     // Upscalers
     {
-        ini.SetValue("Upscalers", "Dx11Upscaler", Instance()->Dx11Upscaler.value_for_config_or("auto").c_str());
-        ini.SetValue("Upscalers", "Dx12Upscaler", Instance()->Dx12Upscaler.value_for_config_or("auto").c_str());
-        ini.SetValue("Upscalers", "VulkanUpscaler", Instance()->VulkanUpscaler.value_for_config_or("auto").c_str());
+        auto SaveUpscaler = [&](const char* key, auto& upscalerSetting)
+        {
+            std::string value = upscalerSetting.value_for_config()
+                                    .transform(UpscalerToCode) // Turn enum into string
+                                    .value_or("auto");
+
+            ini.SetValue("Upscalers", key, value.c_str());
+        };
+
+        SaveUpscaler("Dx11Upscaler", Instance()->Dx11Upscaler);
+        SaveUpscaler("Dx12Upscaler", Instance()->Dx12Upscaler);
+        SaveUpscaler("VulkanUpscaler", Instance()->VulkanUpscaler);
     }
 
     // Frame Generation
     {
         ini.SetValue("FrameGen", "Enabled", GetBoolValue(Instance()->FGEnabled.value_for_config()).c_str());
         ini.SetValue("FrameGen", "DebugView", GetBoolValue(Instance()->FGDebugView.value_for_config()).c_str());
-        std::string FGInputString = "auto";
-        if (auto FGInputHeld = Instance()->FGInput.value_for_config(); FGInputHeld.has_value())
-        {
-            if (FGInputHeld.value() == FGInput::NoFG)
-                FGInputString = "NoFG";
-            else if (FGInputHeld.value() == FGInput::Upscaler)
-                FGInputString = "Upscaler";
-            else if (FGInputHeld.value() == FGInput::Nukems)
-                FGInputString = "Nukems";
-            else if (FGInputHeld.value() == FGInput::DLSSG)
-                FGInputString = "DLSSG";
-            else if (FGInputHeld.value() == FGInput::FSRFG)
-                FGInputString = "FSRFG";
-            else if (FGInputHeld.value() == FGInput::FSRFG30)
-                FGInputString = "FSRFG30";
-        }
+
+        std::string FGInputString =
+            Instance()->FGInput.value_for_config().transform(EnumToCode<enum FGInput>).value_or("auto");
         ini.SetValue("FrameGen", "FGInput", FGInputString.c_str());
 
-        std::string FGOutputString = "auto";
-        if (auto FGOutputHeld = Instance()->FGOutput.value_for_config(); FGOutputHeld.has_value())
-        {
-            if (FGOutputHeld.value() == FGOutput::NoFG)
-                FGOutputString = "NoFG";
-            else if (FGOutputHeld.value() == FGOutput::FSRFG)
-                FGOutputString = "FSRFG";
-            else if (FGOutputHeld.value() == FGOutput::Nukems)
-                FGOutputString = "Nukems";
-            else if (FGOutputHeld.value() == FGOutput::XeFG)
-                FGOutputString = "XeFG";
-        }
+        std::string FGOutputString =
+            Instance()->FGOutput.value_for_config().transform(EnumToCode<enum FGOutput>).value_or("auto");
         ini.SetValue("FrameGen", "FGOutput", FGOutputString.c_str());
+
+        std::string FGNvngxReplacementString = "auto";
+        if (auto FGNvngxReplacementHeld = Instance()->FGNvngxReplacement.value_for_config();
+            FGNvngxReplacementHeld.has_value())
+        {
+            if (FGNvngxReplacementHeld.value() == FGNvngxReplacement::None)
+                FGNvngxReplacementString = "None";
+            else if (FGNvngxReplacementHeld.value() == FGNvngxReplacement::Nukems)
+                FGNvngxReplacementString = "Nukems";
+            else if (FGNvngxReplacementHeld.value() == FGNvngxReplacement::Arturs)
+                FGNvngxReplacementString = "Arturs";
+            else if (FGNvngxReplacementHeld.value() == FGNvngxReplacement::FFX)
+                FGNvngxReplacementString = "FFX";
+            else if (FGNvngxReplacementHeld.value() == FGNvngxReplacement::Combo)
+                FGNvngxReplacementString = "Combo";
+        }
+        ini.SetValue("FrameGen", "FGNvngxReplacement", FGNvngxReplacementString.c_str());
 
         std::optional<int> ftInput;
         if (Instance()->FTInput.has_value())
@@ -828,6 +972,7 @@ bool Config::SaveIni()
         ini.SetValue("FrameGen", "ModifyBufferState",
                      GetBoolValue(Instance()->FGModifyBufferState.value_for_config()).c_str());
         ini.SetValue("FrameGen", "ModifySCIndex", GetBoolValue(Instance()->FGModifySCIndex.value_for_config()).c_str());
+        ini.SetValue("FrameGen", "HudCutoff", GetFloatValue(Instance()->FGHudCutoff.value_for_config()).c_str());
     }
 
     // FSR FG output
@@ -860,6 +1005,16 @@ bool Config::SaveIni()
     {
         ini.SetValue("XeFG", "InterpolationCount",
                      GetIntValue(Instance()->FGXeFGInterpolationCount.value_for_config()).c_str());
+        ini.SetValue("XeFG", "DynamicMFG", GetBoolValue(Instance()->FGXeFGDynamicMFG.value_for_config()).c_str());
+        ini.SetValue("XeFG", "FramerateTargetDMFG",
+                     GetFloatValue(Instance()->FGXeFGFramerateTargetDMFG.value_for_config()).c_str());
+        ini.SetValue("XeFG", "RoundingDMFG", GetIntValue(Instance()->FGXeFGRoundingDMFG.value_for_config()).c_str());
+        ini.SetValue("XeFG", "DynamicAllow1X",
+                     GetBoolValue(Instance()->FGXeFGDynamicAllow1X.value_for_config()).c_str());
+        ini.SetValue("XeFG", "TargetAsCapDMFG",
+                     GetBoolValue(Instance()->FGXeFGTargetAsCapDMFG.value_for_config()).c_str());
+        ini.SetValue("XeFG", "OverrideInterpolationCount",
+                     GetIntValue(Instance()->FGXeFGOverrideInterpolationCount.value_for_config()).c_str());
         ini.SetValue("XeFG", "IgnoreInitChecks",
                      GetBoolValue(Instance()->FGXeFGIgnoreInitChecks.value_for_config()).c_str());
         ini.SetValue("XeFG", "UIComposition", GetBoolValue(Instance()->FGXeFGUIComposition.value_for_config()).c_str());
@@ -871,14 +1026,56 @@ bool Config::SaveIni()
                      GetBoolValue(Instance()->FGXeFGForceBorderless.value_for_config()).c_str());
     }
 
+    {
+        ini.SetValue("DLSSG", "InterpolationCount",
+                     GetIntValue(Instance()->FGDLSSGInterpolationCount.value_for_config()).c_str());
+        ini.SetValue("DLSSG", "UseGamesReflexMarkers",
+                     GetBoolValue(Instance()->FGDLSSGUseGamesReflexMarkers.value_for_config()).c_str());
+        ini.SetValue("DLSSG", "OverrideInterpolationCount",
+                     GetIntValue(Instance()->FGDLSSGOverrideInterpolationCount.value_for_config()).c_str());
+        ini.SetValue("DLSSG", "FramerateTargetDMFG",
+                     GetFloatValue(Instance()->FGDLSSGFramerateTargetDMFG.value_for_config()).c_str());
+        ini.SetValue("DLSSG", "OverrideForceDMFG",
+                     GetBoolValue(Instance()->FGDLSSGOverrideForceDMFG.value_for_config()).c_str());
+        ini.SetValue("DLSSG", "ForceDMFG", GetBoolValue(Instance()->FGDLSSGForceDMFG.value_for_config()).c_str());
+    }
+
+    // Reprojection
+    {
+        std::string fillMode =
+            ReprojectionFillMode.value_for_config().transform(EnumToCode<ReprojectionFill>).value_or("auto");
+
+        ini.SetValue("Reprojection", "FillMode", fillMode.c_str());
+        ini.SetValue("Reprojection", "DepthCutoff",
+                     GetFloatValue(Instance()->ReprojectionDepthCutoff.value_for_config()).c_str());
+        ini.SetValue("Reprojection", "CutoffExpand",
+                     GetIntValue(Instance()->ReprojectionCutoffExpand.value_for_config()).c_str());
+        ini.SetValue("Reprojection", "LateLatch",
+                     GetBoolValue(Instance()->ReprojectionLateLatch.value_for_config()).c_str());
+        ini.SetValue("Reprojection", "DirectionCache",
+                     GetBoolValue(Instance()->ReprojectionDirectionCache.value_for_config()).c_str());
+        ini.SetValue("Reprojection", "ParallaxAuto",
+                     GetBoolValue(Instance()->ReprojectionParallaxAuto.value_for_config()).c_str());
+        ini.SetValue("Reprojection", "ParallaxScale",
+                     GetFloatValue(Instance()->ReprojectionParallaxScale.value_for_config()).c_str());
+        ini.SetValue("Reprojection", "ThirdPersonDetection",
+                     GetBoolValue(Instance()->ReprojectionThirdPersonDetection.value_for_config()).c_str());
+    }
+
     // OptiFG
     {
         ini.SetValue("OptiFG", "DisableHUDFix", GetBoolValue(Instance()->FGDisableHUDFix.value_for_config()).c_str());
         ini.SetValue("OptiFG", "HUDFix", GetBoolValue(Instance()->FGHUDFix.value_for_config()).c_str());
         ini.SetValue("OptiFG", "HUDLimit", GetIntValue(Instance()->FGHUDLimit.value_for_config()).c_str());
         ini.SetValue("OptiFG", "HUDFixExtended", GetBoolValue(Instance()->FGHUDFixExtended.value_for_config()).c_str());
+        ini.SetValue("OptiFG", "HUDFixUITexture",
+                     GetBoolValue(Instance()->FGHUDFixUITexture.value_for_config()).c_str());
+        ini.SetValue("OptiFG", "HUDFixUIUnblend",
+                     GetBoolValue(Instance()->FGHUDFixUIUnblend.value_for_config()).c_str());
         ini.SetValue("OptiFG", "HUDFixImmediate",
                      GetBoolValue(Instance()->FGImmediateCapture.value_for_config()).c_str());
+        ini.SetValue("OptiFG", "HUDFixPersistentBindings",
+                     GetBoolValue(Instance()->FGHudfixPersistentBindings.value_for_config()).c_str());
         ini.SetValue("OptiFG", "UseShards", GetBoolValue(Instance()->FGUseShards.value_for_config()).c_str());
         ini.SetValue("OptiFG", "AlwaysTrackHeaps",
                      GetBoolValue(Instance()->FGAlwaysTrackHeaps.value_for_config()).c_str());
@@ -969,13 +1166,9 @@ bool Config::SaveIni()
                      GetBoolValue(Instance()->FsrUseMaskForTransparency.value_for_config()).c_str());
         ini.SetValue("FSR", "DlssReactiveMaskBias",
                      GetFloatValue(Instance()->DlssReactiveMaskBias.value_for_config()).c_str());
-        ini.SetValue("FSR", "Fsr4Update",
-                     GetBoolValue(Instance()->Fsr4Update.value_for_config_ignore_default()).c_str());
-        ini.SetValue("FSR", "Fsr4ForceEnableInt8",
-                     GetBoolValue(Instance()->Fsr4ForceEnableInt8.value_for_config_ignore_default()).c_str());
+        ini.SetValue("FSR", "Fsr4GpuSupport", GetIntValue(Instance()->Fsr4GpuSupport.value_for_config()).c_str());
         ini.SetValue("FSR", "Fsr4Preset", GetIntValue(Instance()->Fsr4Preset.value_for_config()).c_str());
-        ini.SetValue("FSR", "Fsr4EnableDebugView",
-                     GetBoolValue(Instance()->Fsr4EnableDebugView.value_for_config()).c_str());
+        ini.SetValue("FSR", "Fsr4Model", GetIntValue(Instance()->Fsr4Model.value_for_config()).c_str());
         ini.SetValue("FSR", "Fsr4EnableWatermark",
                      GetBoolValue(Instance()->Fsr4EnableWatermark.value_for_config()).c_str());
         ini.SetValue("FSR", "Fsr4DoNotLoadAmdxc64",
@@ -1037,13 +1230,25 @@ bool Config::SaveIni()
                      GetIntValue(Instance()->DLSSDRenderPresetUltraPerformance.value_for_config()).c_str());
     }
 
-    // Nukems
+    // NvngxFG
     {
-        ini.SetValue("Nukems", "MakeDepthCopy", GetBoolValue(Instance()->MakeDepthCopy.value_for_config()).c_str());
+        ini.SetValue("NvngxFG", "MakeDepthCopy",
+                     GetBoolValue(Instance()->NvngxFGMakeDepthCopy.value_for_config()).c_str());
+        ini.SetValue("NvngxFG", "DispatchFlags",
+                     GetIntValue(Instance()->NvngxFGDispatchFlags.value_for_config(), true).c_str());
+        ini.SetValue("NvngxFG", "ShowDebug", GetBoolValue(Instance()->NvngxFGShowDebug.value_for_config()).c_str());
+        ini.SetValue("NvngxFG", "DisableHudless",
+                     GetBoolValue(Instance()->NvngxFGDisableHudless.value_for_config()).c_str());
     }
 
     // Sharpness
     {
+        std::string shader = SharpnessShader.value_for_config()
+                                 .transform(EnumToCode<SharpenShader>) // Turn enum into string
+                                 .value_or("auto");
+
+        ini.SetValue("Sharpness", "Shader", shader.c_str());
+
         ini.SetValue("Sharpness", "OverrideSharpness",
                      GetBoolValue(Instance()->OverrideSharpness.value_for_config()).c_str());
         ini.SetValue("Sharpness", "Sharpness", GetFloatValue(Instance()->Sharpness.value_for_config()).c_str());
@@ -1062,11 +1267,6 @@ bool Config::SaveIni()
         ini.SetValue("CAS", "ContrastEnabled", GetBoolValue(Instance()->ContrastEnabled.value_for_config()).c_str());
         ini.SetValue("CAS", "Contrast", GetFloatValue(Instance()->Contrast.value_for_config()).c_str());
 
-        ini.SetValue("CAS", "UseDepthAwareSharpen",
-                     GetBoolValue(Instance()->UseDepthAwareSharpen.value_for_config()).c_str());
-        ini.SetValue("CAS", "UseDASDepthAwareSharpen",
-                     GetBoolValue(Instance()->UseDASDepthAwareSharpen.value_for_config()).c_str());
-        ini.SetValue("CAS", "DADepthIsLinear", GetBoolValue(Instance()->DADepthIsLinear.value_for_config()).c_str());
         ini.SetValue("CAS", "DADepthScale", GetFloatValue(Instance()->DADepthScale.value_for_config()).c_str());
         ini.SetValue("CAS", "DADepthBias", GetFloatValue(Instance()->DADepthBias.value_for_config()).c_str());
         ini.SetValue("CAS", "DAClampOutput", GetBoolValue(Instance()->DAClampOutput.value_for_config()).c_str());
@@ -1075,9 +1275,31 @@ bool Config::SaveIni()
                      GetBoolValue(Instance()->MotionSharpnessDebug.value_for_config()).c_str());
     }
 
+    // Magnifier
+    {
+        ini.SetValue("Magnifier", "Enabled", GetBoolValue(Instance()->MagnifierEnabled.value_for_config()).c_str());
+
+        ini.SetValue("Magnifier", "Size", GetFloatValue(Instance()->MagnifierSize.value_for_config()).c_str());
+        ini.SetValue("Magnifier", "ZoomFactor",
+                     GetIntValue(Instance()->MagnifierZoomFactor.value_for_config()).c_str());
+
+        ini.SetValue("Magnifier", "BorderSize",
+                     GetFloatValue(Instance()->MagnifierBorderSize.value_for_config()).c_str());
+        ini.SetValue("Magnifier", "CursorOffsetX",
+                     GetFloatValue(Instance()->MagnifierCursorOffsetX.value_for_config()).c_str());
+        ini.SetValue("Magnifier", "CursorOffsetY",
+                     GetFloatValue(Instance()->MagnifierCursorOffsetY.value_for_config()).c_str());
+
+        ini.SetValue("Magnifier", "StaticPosX",
+                     GetFloatValue(Instance()->MagnifierStaticPosX.value_for_config()).c_str());
+        ini.SetValue("Magnifier", "StaticPosY",
+                     GetFloatValue(Instance()->MagnifierStaticPosY.value_for_config()).c_str());
+    }
+
     // Menu
     {
         ini.SetValue("Menu", "Scale", GetFloatValue(Instance()->MenuScale).c_str());
+        ini.SetValue("Menu", "Height", GetFloatValue(Instance()->MenuHeight).c_str());
         ini.SetValue("Menu", "OverlayMenu", GetBoolValue(Instance()->OverlayMenu.value_for_config()).c_str());
 
         auto setting = Instance()->ShortcutKey.value_for_config();
@@ -1101,7 +1323,7 @@ bool Config::SaveIni()
         ini.SetValue("Menu", "FpsCycleShortcutKey",
                      GetIntValue(Instance()->FpsCycleShortcutKey.value_for_config(), setting > 0).c_str());
 
-        ini.SetValue("Menu", "FpsOverlayPos", GetIntValue(Instance()->FpsOverlayPos.value_for_config()).c_str());
+        ini.SetValue("Menu", "FpsOverlayPos", GetIntValue(Instance()->FpsOverlayPosition.value_for_config()).c_str());
         ini.SetValue("Menu", "FpsOverlayType", GetIntValue(Instance()->FpsOverlayType.value_for_config()).c_str());
         ini.SetValue("Menu", "FpsOverlayHorizontal",
                      GetBoolValue(Instance()->FpsOverlayHorizontal.value_for_config()).c_str());
@@ -1112,6 +1334,7 @@ bool Config::SaveIni()
                      wstring_to_string(Instance()->TTFFontPath.value_for_config_or(L"auto")).c_str());
 
         ini.SetValue("Menu", "LightTheme", GetBoolValue(Instance()->LightTheme.value_for_config()).c_str());
+        ini.SetValue("Menu", "OverlaysUseTheme", GetBoolValue(Instance()->OverlaysUseTheme.value_for_config()).c_str());
         ini.SetValue("Menu", "AccentColorR", GetFloatValue(Instance()->MenuAccentColorR.value_for_config()).c_str());
         ini.SetValue("Menu", "AccentColorG", GetFloatValue(Instance()->MenuAccentColorG.value_for_config()).c_str());
         ini.SetValue("Menu", "AccentColorB", GetFloatValue(Instance()->MenuAccentColorB.value_for_config()).c_str());
@@ -1119,6 +1342,10 @@ bool Config::SaveIni()
         ini.SetValue("Menu", "BGColorG", GetFloatValue(Instance()->MenuBGColorG.value_for_config()).c_str());
         ini.SetValue("Menu", "BGColorB", GetFloatValue(Instance()->MenuBGColorB.value_for_config()).c_str());
         ini.SetValue("Menu", "BGColorA", GetFloatValue(Instance()->MenuBGColorA.value_for_config()).c_str());
+        ini.SetValue("Menu", "Blur", GetBoolValue(Instance()->MenuBlur.value_for_config()).c_str());
+        ini.SetValue("Menu", "BlurStrength", GetFloatValue(Instance()->MenuBlurStrength.value_for_config()).c_str());
+        ini.SetValue("Menu", "CustomTabEnabled", GetBoolValue(Instance()->CustomTabEnabled.value_for_config()).c_str());
+        ini.SetValue("Menu", "CustomTabCards", Instance()->CustomTabCards.value_for_config_or("auto").c_str());
     }
 
     // Hooks
@@ -1207,10 +1434,7 @@ bool Config::SaveIni()
         ini.SetValue("Hotfix", "CheckForUpdate", GetBoolValue(Instance()->CheckForUpdate.value_for_config()).c_str());
         ini.SetValue("Hotfix", "SimulateWaitableObject",
                      GetBoolValue(Instance()->SimulateWaitableObject.value_for_config()).c_str());
-        ini.SetValue("Hotfix", "DisableOverlays",
-                     GetBoolValue(Instance()->DisableOverlays.value_for_config(true)).c_str());
-        ini.SetValue("Hotfix", "ManualInputPolling",
-                     GetBoolValue(Instance()->ManualInputPolling.value_for_config()).c_str());
+        ini.SetValue("Hotfix", "DisableOverlays", GetBoolValue(Instance()->DisableOverlays.value_for_config()).c_str());
 
         ini.SetValue("Hotfix", "RoundInternalResolution",
                      GetIntValue(Instance()->RoundInternalResolution.value_for_config()).c_str());
@@ -1252,27 +1476,24 @@ bool Config::SaveIni()
 
     // Logging
     {
+        ini.SetValue("Log", "LogToFile", GetBoolValue(Instance()->LogToFile.value_for_config()).c_str());
         ini.SetValue("Log", "LogLevel", GetIntValue(Instance()->LogLevel.value_for_config()).c_str());
         ini.SetValue("Log", "LogToConsole", GetBoolValue(Instance()->LogToConsole.value_for_config()).c_str());
         ini.SetValue("Log", "LogToDebug", GetBoolValue(Instance()->LogToDebug.value_for_config()).c_str());
-        ini.SetValue("Log", "LogToFile", GetBoolValue(Instance()->LogToFile.value_for_config()).c_str());
         ini.SetValue("Log", "LogToNGX", GetBoolValue(Instance()->LogToNGX.value_for_config()).c_str());
         ini.SetValue("Log", "OpenConsole", GetBoolValue(Instance()->OpenConsole.value_for_config()).c_str());
+        ini.SetValue("Log", "SingleFile", GetBoolValue(Instance()->LogSingleFile.value_for_config()).c_str());
         ini.SetValue("Log", "LogFileName",
                      wstring_to_string(Instance()->LogFileName.value_for_config_or(L"auto")).c_str());
-        ini.SetValue("Log", "SingleFile", GetBoolValue(Instance()->LogSingleFile.value_for_config()).c_str());
         ini.SetValue("Log", "LogAsync", GetBoolValue(Instance()->LogAsync.value_for_config()).c_str());
         ini.SetValue("Log", "LogAsyncThreads", GetIntValue(Instance()->LogAsyncThreads.value_for_config()).c_str());
     }
 
     // NvApi
     {
-        ini.SetValue("NvApi", "OverrideNvapiDll",
-                     GetBoolValue(Instance()->OverrideNvapiDll.value_for_config()).c_str());
-        ini.SetValue("NvApi", "DontUseFakenvapiForXeLLOnNvidia",
-                     GetBoolValue(Instance()->DontUseFakenvapiForXeLLOnNvidia.value_for_config()).c_str());
         ini.SetValue("NvApi", "DisableFlipMetering",
                      GetBoolValue(Instance()->DisableFlipMetering.value_for_config()).c_str());
+        ini.SetValue("NvApi", "DisableOTA", GetBoolValue(Instance()->DisableOTA.value_for_config()).c_str());
     }
 
     // DRS
@@ -1285,13 +1506,7 @@ bool Config::SaveIni()
 
     // Spoofing
     {
-        // Save Dxgi spoofing value only if it differs from the current GPU vendor
-        bool forceSaveDxgi = Instance()->DxgiSpoofing.has_value() &&
-                             ((State::Instance().isRunningOnNvidia && Instance()->DxgiSpoofing.value()) ||
-                              (!State::Instance().isRunningOnNvidia && !Instance()->DxgiSpoofing.value()));
-
-        ini.SetValue("Spoofing", "Dxgi",
-                     GetBoolValue(Instance()->DxgiSpoofing.value_for_config(forceSaveDxgi)).c_str());
+        ini.SetValue("Spoofing", "Dxgi", GetBoolValue(Instance()->DxgiSpoofing.value_for_config()).c_str());
         ini.SetValue("Spoofing", "DxgiFactoryWrapping",
                      GetBoolValue(Instance()->DxgiFactoryWrapping.value_for_config()).c_str());
         ini.SetValue("Spoofing", "DxgiBlacklist", Instance()->DxgiBlacklist.value_for_config_or("auto").c_str());
@@ -1329,9 +1544,26 @@ bool Config::SaveIni()
         ini.SetValue("Plugins", "Path", wstring_to_string(Instance()->PluginPath.value_for_config_or(L"auto")).c_str());
         ini.SetValue("Plugins", "LoadSpecialK", GetBoolValue(Instance()->LoadSpecialK.value_for_config()).c_str());
         ini.SetValue("Plugins", "LoadReShade", GetBoolValue(Instance()->LoadReShade.value_for_config()).c_str());
+        ini.SetValue("Plugins", "LoadCustomAmdxc64OnRdna2",
+                     GetBoolValue(Instance()->LoadCustomAmdxc64OnRdna2.value_for_config()).c_str());
         ini.SetValue("Plugins", "LoadAsiPlugins", GetBoolValue(Instance()->LoadAsiPlugins.value_for_config()).c_str());
         ini.SetValue("Plugins", "LateAsiPluginsDelay",
                      GetIntValue(Instance()->LateAsiPluginsDelay.value_for_config()).c_str());
+    }
+
+    // fakenvapi
+    {
+        ini.SetValue("fakenvapi", "UseFakenvapi", GetBoolValue(Instance()->UseFakenvapi.value_for_config()).c_str());
+        ini.SetValue("fakenvapi", "ForceXeLL", GetBoolValue(Instance()->ForceXeLL.value_for_config()).c_str());
+        ini.SetValue("fakenvapi", "ForceLatencyFlex",
+                     GetBoolValue(Instance()->FN_ForceLatencyFlex.value_for_config()).c_str());
+        ini.SetValue("fakenvapi", "LatencyFlexMode",
+                     GetIntValue(Instance()->FN_LatencyFlexMode.value_for_config()).c_str());
+        ini.SetValue("fakenvapi", "ForceReflex", GetIntValue(Instance()->FN_ForceReflex.value_for_config()).c_str());
+        ini.SetValue("fakenvapi", "LowLatencyInput",
+                     GetIntValue(Instance()->LowLatencyInput.value_for_config()).c_str());
+        ini.SetValue("fakenvapi", "LowLatencyOutput",
+                     GetIntValue(Instance()->LowLatencyOutput.value_for_config()).c_str());
     }
 
     // inputs
@@ -1409,85 +1641,18 @@ bool Config::SaveIni()
                      wstring_to_string(Instance()->XeSSDx11Library.value_for_config_or(L"auto")).c_str());
     }
 
+    // Old configs, just delete them
+    {
+        ini.Delete("FSR", "Fsr4ForceEnableInt8");
+        ini.Delete("FSR", "Fsr4ForceModel");
+        ini.Delete("Nukems", "MakeDepthCopy", true);
+    }
+
     auto pathWStr = absoluteFileName.wstring();
 
     LOG_INFO("Trying to save ini to: {0}", wstring_to_string(pathWStr));
 
     return ini.SaveFile(absoluteFileName.wstring().c_str()) >= 0;
-}
-
-bool Config::ReloadFakenvapi()
-{
-    std::wstring FN_iniPath;
-
-    auto nvapiPath = std::filesystem::path(MainDllPath.value());
-
-    if (std::filesystem::is_directory(nvapiPath))
-        FN_iniPath = nvapiPath / L"fakenvapi.ini";
-    else
-        FN_iniPath = nvapiPath.parent_path() / L"fakenvapi.ini";
-
-    if (NvapiDllPath.has_value())
-    {
-        auto nvapiPath = std::filesystem::path(NvapiDllPath.value());
-
-        if (std::filesystem::is_directory(nvapiPath))
-            FN_iniPath = nvapiPath / L"fakenvapi.ini";
-        else
-            FN_iniPath = nvapiPath.parent_path() / L"fakenvapi.ini";
-    }
-    auto pathWStr = FN_iniPath;
-
-    LOG_INFO("Trying to load fakenvapi's ini from: {0}", wstring_to_string(pathWStr));
-
-    if (fakenvapiIni.LoadFile(FN_iniPath.c_str()) == SI_OK)
-    {
-        FN_EnableLogs = fakenvapiIni.GetLongValue("fakenvapi", "enable_logs", true);
-        FN_EnableTraceLogs = fakenvapiIni.GetLongValue("fakenvapi", "enable_trace_logs", false);
-        FN_ForceLatencyFlex = fakenvapiIni.GetLongValue("fakenvapi", "force_latencyflex", false);
-        FN_LatencyFlexMode = fakenvapiIni.GetLongValue("fakenvapi", "latencyflex_mode", 0);
-        FN_ForceReflex = fakenvapiIni.GetLongValue("fakenvapi", "force_reflex", 0);
-
-        return true;
-    }
-
-    return false;
-}
-
-bool Config::SaveFakenvapiIni()
-{
-    std::wstring FN_iniPath;
-
-    auto nvapiPath = std::filesystem::path(MainDllPath.value());
-
-    if (std::filesystem::is_directory(nvapiPath))
-        FN_iniPath = nvapiPath / L"fakenvapi.ini";
-    else
-        FN_iniPath = nvapiPath.parent_path() / L"fakenvapi.ini";
-
-    if (NvapiDllPath.has_value())
-    {
-        auto nvapiPath = std::filesystem::path(NvapiDllPath.value());
-
-        if (std::filesystem::is_directory(nvapiPath))
-            FN_iniPath = nvapiPath / L"fakenvapi.ini";
-        else
-            FN_iniPath = nvapiPath.parent_path() / L"fakenvapi.ini";
-    }
-
-    auto pathWStr = FN_iniPath;
-
-    LOG_INFO("Trying to save fakenvapi's ini to: {0}", wstring_to_string(pathWStr));
-
-    fakenvapiIni.SetLongValue("fakenvapi", "enable_logs", FN_EnableLogs.value_or(true));
-    fakenvapiIni.SetLongValue("fakenvapi", "enable_trace_logs", FN_EnableTraceLogs.value_or(false));
-    fakenvapiIni.SetLongValue("fakenvapi", "force_latencyflex", FN_ForceLatencyFlex.value_or(false));
-    fakenvapiIni.SetLongValue("fakenvapi", "latencyflex_mode", FN_LatencyFlexMode.value_or(0));
-    fakenvapiIni.SetLongValue("fakenvapi", "force_reflex", FN_ForceReflex.value_or(0));
-
-    StreamlineHooks::updateForceReflex();
-
-    return fakenvapiIni.SaveFile(FN_iniPath.c_str()) >= 0;
 }
 
 bool Config::SaveXeFG()
@@ -1547,6 +1712,35 @@ void Config::CheckUpscalerFiles()
     {
         LOG_INFO("libxess.dll found in game folder");
     }
+}
+
+bool Config::FGCanFollowGame()
+{
+    // SL1 has no slDLSSGSetOptions so we never learn what the game wants
+    const auto& state = State::Instance();
+    return state.activeFgInput == FGInput::DLSSG && state.streamlineVersion.major >= 2;
+}
+
+bool Config::FGFollowsGame() const { return !FGEnabled.has_value() && FGCanFollowGame(); }
+
+bool Config::IsFGEnabled() const
+{
+    // Force DMFG overrides the FG mode
+    if (FGDLSSGForceDMFG.value_or_default() && State::Instance().activeFgOutput == FGOutput::DLSSG)
+        return true;
+
+    if (FGFollowsGame())
+        return State::Instance().dlssgInputGameEnabled;
+
+    return FGEnabled.value_or_default();
+}
+
+int Config::FGInterpolationCount(int outputCount) const
+{
+    if (FGFollowsGame())
+        return State::Instance().dlssgInputGameInterpolationCount;
+
+    return outputCount;
 }
 
 std::vector<std::string> Config::GetConfigLog() { return _log; }
@@ -1699,6 +1893,23 @@ std::optional<bool> Config::readBool(std::string section, std::string key)
         return true;
     else if (value == "false")
         return false;
+
+    return std::nullopt;
+}
+
+// Only use for unsigned enums that have Enum::Count as the last entry
+template <typename Enum> std::optional<Enum> Config::readEnum(std::string section, std::string key)
+{
+    static_assert(std::is_enum_v<Enum>, "Enum type required");
+
+    auto value = readUInt(section, key);
+    if (!value.has_value())
+        return std::nullopt;
+
+    using Underlying = std::underlying_type_t<Enum>;
+
+    if (*value < static_cast<Underlying>(Enum::Count))
+        return static_cast<Enum>(*value);
 
     return std::nullopt;
 }

@@ -118,4 +118,12 @@ struct msvc_deque_raw {
     size_t size;
 };
 
+// std::mutex on MSVC x64 is a single pointer to the CRT's internal mutex
+// object (`_Mtx_t`). It is never locked or unlocked here either: State holds
+// one beside its loaded-ASI-plugin list, and this only has to occupy the same
+// eight bytes so every offset after it still lines up.
+struct msvc_mutex_raw {
+    void* mtx;
+};
+
 } // namespace optimirror
