@@ -1,8 +1,8 @@
 """Shared constants for the Decky OptiScaler plugin."""
 
-OPTISCALER_VERSION = "0.9.4"
-PAYLOAD_ARCHIVE = "OptiScaler-0.9.4.7z"
-PAYLOAD_SHA256 = "575cb4df866116093df75af607e37fd70e10f5163e0f23fd5c804142e80ef0ad"
+OPTISCALER_VERSION = "10.0.0-pre1"
+PAYLOAD_ARCHIVE = "OptiScaler-10.0.0-pre1.7z"
+PAYLOAD_SHA256 = "f75ece86c1235cbbec65093262ca998dc107dda8efccfef1270ebe6f44c22e6e"
 
 INI_NAME = "OptiScaler.ini"
 LOG_NAME = "OptiScaler.log"
@@ -127,21 +127,26 @@ PROXY_FILENAMES = [
 ]
 DEFAULT_PROXY = "dxgi.dll"
 
-# Support libraries copied next to the proxy dll.
+# Support libraries, copied into the game folder. From OptiScaler v10 on, the
+# release keeps them under an ``OptiScaler/`` sub-folder (the ini's
+# ``Libraries/OptiDllPath`` defaults to ``.\OptiScaler``), so the names here are
+# relative to the game folder rather than flat. amdxcffx64/amdvkffx64 are the
+# driver-provided FSR 4 libraries; the Vulkan one (amdvkffx64) is what carries
+# the INT8 RDNA2 and INT8 Lite (FSR 4 Lite) models.
 PAYLOAD_FILES = [
-    "amd_fidelityfx_dx12.dll",
-    "amd_fidelityfx_framegeneration_dx12.dll",
-    "amd_fidelityfx_upscaler_dx12.dll",
-    "amd_fidelityfx_vk.dll",
-    "dlssg_to_fsr3_amd_is_better.dll",
-    "fakenvapi.dll",
-    "fakenvapi.ini",
-    "libxell.dll",
-    "libxess.dll",
-    "libxess_dx11.dll",
-    "libxess_fg.dll",
+    "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll",
+    "OptiScaler/amd_fidelityfx_loader_dx12.dll",
+    "OptiScaler/amd_fidelityfx_upscaler_dx12.dll",
+    "OptiScaler/amd_fidelityfx_vk.dll",
+    "OptiScaler/amdxcffx64.dll",
+    "OptiScaler/amdvkffx64.dll",
+    "OptiScaler/dlssg_to_fsr3_amd_is_better.dll",
+    "OptiScaler/libxell.dll",
+    "OptiScaler/libxess.dll",
+    "OptiScaler/libxess_dx11.dll",
+    "OptiScaler/libxess_fg.dll",
 ]
-PAYLOAD_DIRS = ["D3D12_Optiscaler", "Licenses"]
+PAYLOAD_DIRS = ["OptiScaler", "Licenses"]
 
 # Extra files OptiScaler or its helpers create at runtime; removed on uninstall.
 RUNTIME_ARTIFACTS = [
@@ -183,18 +188,30 @@ EXE_NAME_BLACKLIST = {
     "notification_helper.exe",
 }
 
-# FSR4 comes from amd_fidelityfx_upscaler_dx12.dll (the FidelityFX SDK), which
-# IS bundled in the OptiScaler release — 4.1.1 in v0.9.4. amdxcffx64.dll is the
-# alternative, driver-provided FSR4 source; OptiScaler only falls back to it when
-# the SDK does not supply the effect. It is optional, not required.
-FSR4_SUPPORT_FILES = ["amdxcffx64.dll", "amdxc64.dll"]
+# FSR4 comes from amd_fidelityfx_upscaler_dx12.dll (the FidelityFX SDK, still
+# 4.1.1 in this v10 release) or from the driver-provided libraries.
+# amdxcffx64.dll is the DX12 driver build; amdvkffx64.dll is the Vulkan one and
+# the only place the INT8 RDNA2 and INT8 Lite models exist — INT8 Lite is what
+# this plugin calls FSR 4 Lite. Both ship in the payload under OptiScaler/.
+FSR4_SUPPORT_FILES = [
+    "OptiScaler/amdxcffx64.dll",
+    "OptiScaler/amdvkffx64.dll",
+    "OptiScaler/amdxc64.dll",
+]
 
 # The FidelityFX SDK dll that actually carries FSR4. FSR 4 arrived with the
 # 4.0.2 build (FFX SDK 2.0), so that is the floor for "this file is a FSR 4
 # library at all"; the INT8 model specifically needs 4.1.1, which is what
 # OptiScaler's own menu asks for before it will offer the FSR 3.X/4 entry off
-# the back of Fsr4ForceEnableInt8 (menu_common.cpp).
-FFX_UPSCALER_DLL = "amd_fidelityfx_upscaler_dx12.dll"
+# the back of Fsr4GpuSupport (menu_common.cpp).
+FFX_UPSCALER_DLL = "OptiScaler/amd_fidelityfx_upscaler_dx12.dll"
+
+#: The same library's bare filename. A game that ships its own FidelityFX
+#: upscaler has it at the game root under this name, which is a *different*
+#: file from the one OptiScaler reads out of OptiScaler/ and must be left
+#: alone; downloadable FSR 4 packages also hold it under this name inside the
+#: archive, so it is what their ``file`` entry ends with.
+FFX_UPSCALER_FILE = "amd_fidelityfx_upscaler_dx12.dll"
 FSR4_MIN_SDK_VERSION = (4, 0, 2, 0)
 FSR4_INT8_MIN_SDK_VERSION = (4, 1, 1, 0)
 

@@ -32,6 +32,7 @@ from .constants import (
     PAYLOAD_FILES,
     PROXY_FILENAMES,
     REFRAMEWORK_DLL,
+    REFRAMEWORK_PD_PLUGIN,
     RUNTIME_ARTIFACTS,
 )
 
@@ -213,7 +214,7 @@ def ffx_upscaler_info(target_dir):
     version = pe_file_version(dll) if dll.is_file() else None
     return {
         "present": dll.is_file(),
-        "name": FFX_UPSCALER_DLL,
+        "name": Path(FFX_UPSCALER_DLL).name,
         "version": ".".join(str(n) for n in version) if version else None,
         # The tuple as well, because callers compare it against the floor FSR 4
         # starts at and against the 4.1.1 the INT8 override needs — and parsing
@@ -232,7 +233,7 @@ def fsr4_status(target_dir):
     ffx = ffx_upscaler_info(target_dir)
     return {
         "files": present,
-        "ready": present.get("amdxcffx64.dll", False),
+        "ready": present.get("OptiScaler/amdxcffx64.dll", False),
         "required": FSR4_SUPPORT_FILES,
         "ffx": ffx,
         # Which upscaler build this actually is. Read out of the bytes rather
@@ -251,7 +252,7 @@ def find_fsr4_sources(home):
         candidate = Path(home) / hint
         if not candidate.is_dir():
             continue
-        names = [n for n in FSR4_SUPPORT_FILES if (candidate / n).is_file()]
+        names = [n for n in FSR4_SUPPORT_FILES if (candidate / Path(n).name).is_file()]
         if names:
             found.append({"path": str(candidate), "files": names})
     return found
@@ -266,7 +267,7 @@ def import_fsr4_files(target_dir, source_dir, logger=None):
     if not source.is_dir():
         raise NotADirectoryError(f"source folder does not exist: {source}")
 
-    names = [n for n in FSR4_SUPPORT_FILES if (source / n).is_file()]
+    names = [n for n in FSR4_SUPPORT_FILES if (source / Path(n).name).is_file()]
     if not names:
         raise FileNotFoundError(
             f"no FSR4 support files ({', '.join(FSR4_SUPPORT_FILES)}) in {source}"
@@ -278,9 +279,10 @@ def import_fsr4_files(target_dir, source_dir, logger=None):
 
     for name in names:
         destination = target / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists() and name not in backups and name not in files:
             backups[name] = _stash(target, destination, logger)
-        shutil.copy2(source / name, destination)
+        shutil.copy2(source / Path(name).name, destination)
         if name not in files:
             files.append(name)
         if logger:
@@ -339,6 +341,7 @@ def _replace_fsr4(target, source, recorded, enable_int8=False):
         existed = {name: (target / name).is_file() for name in names}
         for name in names:
             if existed[name]:
+                (staging / name).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target / name, staging / name)
         try:
             atomic_copy(source, target / FFX_UPSCALER_DLL)
@@ -346,12 +349,8 @@ def _replace_fsr4(target, source, recorded, enable_int8=False):
                 if not existed[INI_NAME]:
                     raise FileNotFoundError("OptiScaler.ini not found")
                 ini = IniFile(staging / INI_NAME)
-                changes = {
-                    "Upscalers": {"Dx12Upscaler": "fsr31", "Dx11Upscaler": "fsr31_12",
-                                  "VulkanUpscaler": "fsr31_12"},
-                    "FSR": {"Fsr4Update": "auto", "Fsr4ForceEnableInt8": "true",
-                            "UpscalerIndex": "0", "Fsr4Preset": "auto"},
-                }
+                changes = {section: dict(values)
+                           for section, values in DECK_FSR4_PRESET.items()}
                 for section, values in changes.items():
                     for key, value in values.items():
                         meta = schema.option(section, key)
@@ -369,6 +368,7 @@ def _replace_fsr4(target, source, recorded, enable_int8=False):
         except Exception:
             for name in names:
                 if existed[name]:
+                    (target / name).parent.mkdir(parents=True, exist_ok=True)
                     atomic_copy(staging / name, target / name)
                 else:
                     (target / name).unlink(missing_ok=True)
@@ -508,6 +508,87 @@ def _stash(target, path, logger=None):
     return path.name
 
 
+#: What "FSR 4 Lite on a Steam Deck" means in v10 ini keys. Fsr4GpuSupport=4
+#: makes OptiScaler treat the GPU as FSR 4 capable and limits it to the INT8
+#: Lite model; Fsr4Model=3 selects that model; UpscalerIndex=0 asks for the
+#: FSR 4 backend where auto would pick FSR 3.x on RDNA 2. DX12 only reaches
+#: FSR 4 through the ffx (FidelityFX) path, hence the upscaler switches.
+DECK_FSR4_PRESET = {
+    "Upscalers": {"Dx12Upscaler": "ffx", "Dx11Upscaler": "ffx_12",
+                  "VulkanUpscaler": "ffx_12"},
+    "FSR": {"Fsr4GpuSupport": "4", "Fsr4Model": "3", "UpscalerIndex": "0"},
+}
+
+#: Managed names a reinstall must leave alone even when the old manifest listed
+#: them: they belong to features that are still installed.
+STALE_KEEP = {REFRAMEWORK_DLL, REFRAMEWORK_PD_PLUGIN, MANIFEST_NAME, INI_NAME,
+              LAUNCH_RECORD_NAME, BACKUP_DIR}
+
+
+def _apply_deck_fsr4_preset(ini_path, logger=None):
+    """Write the FSR 4 Lite preset into an ini, keeping the file readable.
+
+    Only keys the generated schema knows are written, so a release whose ini
+    renamed something degrades to "the rest still applies" instead of a failed
+    install.
+    """
+    ini_path = Path(ini_path)
+    if not ini_path.is_file():
+        return
+    try:
+        ini = IniFile(ini_path)
+    except Exception:  # noqa: BLE001 - reported, then the placed copy stands
+        if logger:
+            logger.warning("could not read %s for the FSR 4 preset", ini_path)
+        return
+    accepted = {}
+    for section, values in DECK_FSR4_PRESET.items():
+        for key, value in values.items():
+            meta = schema.option(section, key)
+            if meta is not None and schema.valid(meta, value):
+                accepted.setdefault(section, {})[key] = value
+            elif logger:
+                logger.warning("FSR 4 preset key %s.%s unknown, skipped", section, key)
+    if not accepted:
+        return
+    ini.update(accepted)
+    ini.save()
+
+
+def _drop_stale(old_files, old_dirs, keep_files, keep_dirs, target, backups,
+                logger=None):
+    """Remove what an older release put down and this layout no longer uses.
+
+    Only names the previous manifest recorded as ours are touched, so nothing
+    the game shipped is at risk. A name that had displaced a game file is moved
+    back instead of deleted, exactly like an uninstall would.
+    """
+    for name in sorted(old_files):
+        if name in keep_files or name in STALE_KEEP:
+            continue
+        path = target / name
+        if backups.pop(name, None):
+            stashed = backup_dir(target) / Path(name).name
+            if stashed.is_file():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(stashed), str(path))
+                if logger:
+                    logger.info("restored original %s while upgrading", name)
+            continue
+        if path.is_file():
+            path.unlink(missing_ok=True)
+            if logger:
+                logger.info("removed stale %s", name)
+    for name in sorted(old_dirs):
+        if name in keep_dirs:
+            continue
+        path = target / name
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+            if logger:
+                logger.info("removed stale %s/", name)
+
+
 def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
             logger=None, live_asi=None, optipatcher=None, reframework_files=None,
             reframework_revision=None):
@@ -553,9 +634,15 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
     backups = dict(old_manifest.get("backups") or {})
     created = []
     created_dirs = []
+    # What the game folder held before this install started. place() creates
+    # OptiScaler/ for the libraries, and without this the folder it just made
+    # would look like a pre-existing one and get stashed as if it were the
+    # game's own.
+    pre_existing = {entry.name for entry in target.iterdir()}
 
     # Remove a previous install under a different filename so the game does not
     # end up loading OptiScaler twice.
+    restored_proxies = set()
     for stale in previous.get("candidates", []):
         if stale == filename:
             continue
@@ -571,11 +658,17 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
                 shutil.move(str(stashed), str(stale_path))
                 if logger:
                     logger.info("restored original %s while moving proxy", stale)
+            # The name is the game's again, but the previous manifest still
+            # lists it as ours: without this the stale sweep below would delete
+            # the dll we just put back.
+            restored_proxies.add(stale)
         elif logger:
             logger.info("removed previous OptiScaler proxy %s", stale)
 
     def place(src, dest_name):
         dest = target / dest_name
+        # v10 keeps its libraries under OptiScaler/, so names are relative.
+        dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists() and dest_name not in backups and dest_name not in created:
             # Only stash files that belong to the game, not our own leftovers.
             if dest_name not in old_files and not _looks_like_optiscaler(dest):
@@ -591,6 +684,9 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         shutil.copy2(payload / INI_NAME, ini_path)
     if INI_NAME not in created:
         created.append(INI_NAME)
+    # Even when the ini was preserved from the 0.9.4 days, the FSR 4 Lite
+    # switches are what this build exists for.
+    _apply_deck_fsr4_preset(ini_path, logger)
 
     for name in PAYLOAD_FILES:
         if name == FFX_UPSCALER_DLL and selected_build:
@@ -605,11 +701,19 @@ def install(target_dir, payload_root, filename=DEFAULT_PROXY, preserve_ini=True,
         if not src.is_dir():
             continue
         dest = target / name
-        if dest.exists() and name not in backups and name not in old_dirs:
+        if (dest.exists() and name in pre_existing
+                and name not in backups and name not in old_dirs):
             backups[name] = _stash(target, dest, logger)
         shutil.copytree(src, dest, dirs_exist_ok=True)
         if name not in created_dirs:
             created_dirs.append(name)
+
+    # A reinstall over a 0.9.4-era game folder has to stop looking like two
+    # releases in one folder: those files sat at the game root and nothing in
+    # v10 reads them from there any more. Names we just handed back to the game
+    # are not ours to sweep.
+    _drop_stale(old_files, old_dirs, set(created) | restored_proxies,
+                set(created_dirs), target, backups, logger)
 
     # REFramework, for the games whose wiki entry says OptiScaler does nothing
     # without it. One file (plus the revision stamp REF itself writes), placed

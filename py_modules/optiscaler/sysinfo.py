@@ -1,13 +1,11 @@
 """GPU identification, used to explain what FSR4 can and cannot do on this device.
 
-FSR4 is officially RDNA3 (desktop) and RDNA4 only, and AMD has said RDNA2 will
-follow later. Until then 0.9.4 reaches RDNA2 through ``Fsr4ForceEnableInt8``:
-the release notes describe that override as being for "FSR4 incompatible GPUs",
-and the maintainer's answer to a Steam Deck/RDNA2 report on the tracker was that
-it is the only option such a device needs. The bundled build is enough for it —
-a Deck logging ``FSR4-I8 UPSCALE 4.1.1`` on stock 0.9.4 files is issue #1078.
-So RDNA2 reads as "experimental" rather than "unsupported": reachable, not
-promised.
+FSR4 is officially RDNA3 (desktop) and RDNA4 only. RDNA2 reaches it through
+``Fsr4GpuSupport=4`` in OptiScaler v10, which marks the GPU as FSR 4 capable and
+limits it to the INT8 models; the INT8 Lite model (``Fsr4Model=3``) is the one
+this plugin ships for the Steam Deck, and it only exists in the Vulkan driver DLL
+(``amdvkffx64.dll``). So RDNA2 reads as "experimental" rather than
+"unsupported": reachable, not promised.
 """
 
 import re

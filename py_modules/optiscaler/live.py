@@ -24,7 +24,11 @@ from pathlib import Path
 from .constants import BACKUP_DIR
 
 ASI_NAME = "decky_optiscaler_live.asi"
-PLUGIN_SUBDIR = "plugins"
+# OptiScaler v10 keeps its support files under an OptiScaler/ folder and looks
+# for ASI plugins in OptiScaler/plugins by default (Plugins.Path auto,
+# "plugins under OptiDllPath .\\OptiScaler\\plugins\\"). OptiPatcher goes here
+# for the same reason.
+PLUGIN_SUBDIR = "OptiScaler/plugins"
 CMD_FILE = "decky_optiscaler_live.cmd"
 STATUS_FILE = "decky_optiscaler_live.status"
 LOG_FILE = "decky_optiscaler_live.log"
@@ -35,15 +39,19 @@ LOG_FILE = "decky_optiscaler_live.log"
 # change a setting recently.
 STATUS_STALE_SECONDS = 20
 
-# The backend ids OptiScaler accepts, from the overlay's own upscaler combos
-# (OptiScaler/menu/menu_common.cpp). In 0.9.4 these are plain strings in both
-# Config and State - they only became an enum after this release.
+# The backend ids OptiScaler accepts, from its own UpscalerToCode /
+# CodeToUpscaler (OptiScaler/OptiTypes.cpp). Since v10 these name an entry in the
+# Upscaler enum rather than a std::string, so the set is fixed by that enum. The
+# tuple *order is the enum order*: id N is Upscaler(N).
 BACKEND_CODES = (
     "xess", "xess_12",
     "fsr21", "fsr21_12",
     "fsr22", "fsr22_12",
-    "fsr31", "fsr31_12",
-    "dlss", "dlssd",
+    "fsr31",
+    # v10 renamed the FidelityFX backends: `ffx` is the DX12 one (0.9.4's
+    # `fsr31`) and `ffx_12` its DX11/Vulkan interop variant.
+    "ffx", "ffx_12",
+    "dlss", "dlss_12", "dlssd",
 )
 
 # The FFX frame generators OptiScaler can be told to use, and the INI key that
@@ -69,8 +77,10 @@ FFX_UPSCALER_ID = f"{FFX_UPSCALER_SECTION}.{FFX_UPSCALER_KEY}"
 FFX_UPSCALER_MAX = FFX_FG_MAX
 
 # Only the FidelityFX backend has FSR versions to choose between; every other
-# upscaler ignores the index entirely.
-FFX_BACKENDS = ("fsr31", "fsr31_12")
+# upscaler ignores the index entirely. v10 calls these ids `ffx` and `ffx_12`;
+# the 0.9.4 spellings stay listed so a game OptiScaler has not upgraded -- or a
+# Status file written before the upgrade -- still resolves.
+FFX_BACKENDS = ("fsr31", "fsr31_12", "ffx", "ffx_12")
 
 # Which INI key names the backend for each graphics API. The live switch can
 # only push one id into State::newBackend, and DX12 is what OptiScaler is
@@ -113,6 +123,19 @@ def _float(value):
     return repr(float(str(value).strip()))
 
 
+def _u8(value):
+    """A small non-negative integer, for a field whose type is one byte.
+
+    v10's FSR 4 switches are enums with a `uint8_t` underlying type, so the
+    valid range is the byte's and anything outside it is a caller bug rather
+    than something to truncate silently.
+    """
+    number = int(float(str(value).strip()))
+    if number < 0 or number > 255:
+        raise ValueError(f"not a byte-sized value: {value!r}")
+    return str(number)
+
+
 def _fg_index(value):
     """An index into the FFX FG version list the running game reported."""
     index = int(float(str(value).strip()))
@@ -135,6 +158,17 @@ def _backend(value):
     if code not in BACKEND_CODES:
         raise ValueError(f"not an OptiScaler backend id: {value!r}")
     return code
+
+
+def _backend_value(value):
+    """An upscaler id as the Upscaler enum value v10 stores in Config.
+
+    v10 replaced 0.9.4's std::string Config::*Upscaler with a four-byte enum, so
+    the wire type is u32 and the value is the enum's, not the id. The ordering is
+    OptiTypes.h's, which is also OptiTypes.cpp's UpscalerToCode.
+    """
+    code = _backend(value)
+    return str(BACKEND_CODES.index(code))
 
 
 # Only settings OptiScaler genuinely re-reads while rendering belong here.
@@ -166,17 +200,27 @@ LIVE_FIELDS = {
     FFX_UPSCALER_ID: LiveField("FfxUpscalerIndex", "i32", _ffx_upscaler_index,
                                needs_feature_rebuild=True),
 
+    # v10's FSR 4 switches. Both are read while the driver FSR model is being
+    # chosen, and the release notes for the reworked driver-DLL handling say the
+    # model "can be changed in the menu while the game runs" -- so this is one
+    # of the few places where the overlay's own menu is the authority and a live
+    # write is exactly what it does. Fsr4GpuSupport is an enum (0 = no override,
+    # 1 = FP8, 2 = INT8, 3 = INT8-2, 4 = INT8 Lite) whose underlying type is one
+    # byte, the same as the mirror stores it.
+    "FSR.Fsr4GpuSupport": LiveField("Fsr4GpuSupport", "u32", _u8),
+    "FSR.Fsr4Model": LiveField("Fsr4Model", "u32", _u8),
+
     # Upscaler override. Writing Config alone would not switch anything: the
-    # overlay's own "change upscaler" path puts the id in State::newBackend and
-    # marks every backend changed. Note that the overlay does *not* touch Config
-    # when it does that - see _drop_upscaler_writes for why we no longer do
-    # either.
+    # overlay's own "change upscaler" path puts the enum value in
+    # State::newBackend and marks every backend changed. Note that the overlay
+    # does *not* touch Config when it does that - see _drop_upscaler_writes for
+    # why we no longer do either.
     "Upscalers.Dx11Upscaler": LiveField(
-        "Dx11Upscaler", "str", _backend, needs_backend_change=True),
+        "Dx11Upscaler", "u32", _backend_value, needs_backend_change=True),
     "Upscalers.Dx12Upscaler": LiveField(
-        "Dx12Upscaler", "str", _backend, needs_backend_change=True),
+        "Dx12Upscaler", "u32", _backend_value, needs_backend_change=True),
     "Upscalers.VulkanUpscaler": LiveField(
-        "VulkanUpscaler", "str", _backend, needs_backend_change=True),
+        "VulkanUpscaler", "u32", _backend_value, needs_backend_change=True),
 
     # Cheap per-frame knobs, safe to move while playing.
     "Sharpness.OverrideSharpness": LiveField("OverrideSharpness", "bool", _bool),
@@ -624,7 +668,10 @@ def apply_changes(target_dir, changes):
             continue
         live.append(f"set {field.member} {field.wire_type} {encoded}")
         if field.needs_backend_change:
-            backend_codes[ini_key] = encoded
+            # The ASI's `backend` verb takes the *id*, not the enum value it is
+            # encoded to for the Config write: it does the code->enum mapping
+            # itself, and it is the same table the panel lists.
+            backend_codes[ini_key] = _backend(change["value"])
 
     # One id goes into State::newBackend; the API-specific keys disagree by
     # design (fsr31 on DX12 is fsr31_12 on DX11), so pick by API priority.

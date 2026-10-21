@@ -150,10 +150,22 @@ class OptiScalerService:
     async def list_libraries(self):
         return await self._run(self._libraries)
 
+    @staticmethod
+    def _posix(path):
+        """`path` as a forward-slash string.
+
+        Every path this service reasons about is a Linux one, but ``Path``
+        rewrites the separators when the code runs anywhere else (and a custom
+        library the user types may use forward slashes regardless). Comparing
+        the mount points against the raw string is what makes the lookup work
+        on the Deck, so normalise rather than trust the host's spelling.
+        """
+        return str(path).replace("\\", "/")
+
     def _library_label(self, path):
         path = Path(path)
-        text = str(path)
-        if str(self.home) in text:
+        text = self._posix(path)
+        if self._posix(self.home) in text:
             return "Internal Storage"
         if self._is_sd_card(path):
             return f"SD Card ({path.name})"
@@ -173,7 +185,7 @@ class OptiScalerService:
         the card rather than to whatever it sits in.
         """
         try:
-            target = os.path.realpath(str(path))
+            target = OptiScalerService._posix(os.path.realpath(str(path)))
             entries = Path("/proc/mounts").read_text(errors="replace").splitlines()
         except OSError:
             return None
